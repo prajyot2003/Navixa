@@ -1,0 +1,10 @@
+{
+  "name": "Navixa — navigate your career",
+  "short_name": "Navixa",
+  "description": "Career navigation for students and professionals: jobs, AI guidance, resume builder, learning and streaks.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b0d16",
+  "theme_color": "#6d5dfc",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

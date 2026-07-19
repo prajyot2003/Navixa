@@ -1,0 +1,14 @@
+# dependencies (only needed to run the test suite / bundler locally)
+node_modules/
+
+# build + deploy artifacts
+dist/
+deploy/*.tar.gz
+
+# scratch files
+_bundle-smoke.mjs
+
+# OS / editor
+.DS_Store
+*.log
+.vercel/
