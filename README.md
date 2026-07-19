@@ -1,6 +1,6 @@
 # Navixa — navigate your career
 
-**Live: https://navixa-woad.vercel.app** (also https://navixa-prajyot2003.vercel.app)
+**Live: https://navixa-woad.vercel.app**
 
 A career-navigation web app for students and working professionals. No build step, no database, no paid services — everything runs in the browser with free public APIs.
 
