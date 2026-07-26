@@ -573,6 +573,17 @@ textarea.input { resize: vertical; min-height: 74px; }
 .typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
 .chat-input-bar { border-top: 1px solid var(--border); padding: 13px 15px; display: flex; gap: 10px; align-items: flex-end; }
 .chat-input-bar textarea { flex: 1; max-height: 130px; min-height: 46px; border-radius: 20px; }
+.attach-btn { flex: none; width: 46px; height: 46px; }
+.attach-preview { padding: 0 15px; }
+.attach-preview:not(:empty) { padding: 8px 15px 0; }
+.attach-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 12px; padding: 7px 10px; font-size: 12.8px; color: var(--text-2); }
+.attach-chip .af-name { font-weight: 600; color: var(--text); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip .af-meta { color: var(--text-3); }
+.attach-chip.is-loading { color: var(--text-3); }
+.attach-chip .af-x { display: inline-grid; place-items: center; margin-left: 2px; color: var(--text-3); border-radius: 7px; padding: 2px; }
+.attach-chip .af-x:hover { color: var(--a2c, #FB7185); background: var(--surface-3); }
+.msg-file { display: inline-flex; align-items: center; gap: 6px; font-size: 12.4px; font-weight: 600; margin-bottom: 7px; padding: 4px 9px; border-radius: 9px; background: rgb(255 255 255 / .18); }
+.msg.assistant .msg-file { background: var(--surface-3); color: var(--text-2); }
 .prompt-chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 15px 2px; }
 .prompt-chips .chip { cursor: pointer; white-space: nowrap; background: var(--surface); }
 .prompt-chips .chip:hover { border-color: var(--accent); color: var(--accent-strong); }

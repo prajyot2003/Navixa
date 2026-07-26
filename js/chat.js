@@ -76,10 +76,13 @@ export function chatView({ autoMode } = {}) {
         <div class="mode-pills"></div>
         <div class="chat-scroll"></div>
         <div class="prompt-chips"></div>
+        <div class="attach-preview" data-attach-preview></div>
         <div class="chat-input-bar">
-          <textarea class="input" rows="1" placeholder="Ask anything about your career, the job market, interviews…" aria-label="Message"></textarea>
+          <button class="icon-btn plain attach-btn" data-attach title="Attach a file to analyse (PDF, Word, text, code, CSV…)" aria-label="Attach a file">${icon('paperclip', 19)}</button>
+          <textarea class="input" rows="1" placeholder="Ask anything, or attach a file to analyse…" aria-label="Message"></textarea>
           <button class="btn btn-primary" data-send aria-label="Send">${icon('send', 18)}</button>
         </div>
+        <input type="file" hidden data-file>
       </div>
     </div>`;
 
@@ -88,6 +91,41 @@ export function chatView({ autoMode } = {}) {
   const inputEl = $('textarea', root);
   const modesEl = $('.mode-pills', root);
   const chipsEl = $('.prompt-chips', root);
+  const previewEl = $('[data-attach-preview]', root);
+  const fileInput = $('[data-file]', root);
+
+  // --- file attachment state ---
+  let pendingFile = null;   // { name, size, text, truncated }
+  let reading = false;
+
+  const fmtSize = (b) => (b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`);
+
+  function renderAttach() {
+    if (reading) {
+      previewEl.innerHTML = `<div class="attach-chip is-loading"><span class="typing"><i></i><i></i><i></i></span> Reading file…</div>`;
+      return;
+    }
+    if (!pendingFile) { previewEl.innerHTML = ''; return; }
+    previewEl.innerHTML = `<div class="attach-chip">${icon('file', 15)}
+      <span class="af-name">${esc(pendingFile.name)}</span>
+      <span class="af-meta">${fmtSize(pendingFile.size)}${pendingFile.truncated ? ' · trimmed' : ''} · ready</span>
+      <button class="af-x" data-remove-file aria-label="Remove file">${icon('x', 14)}</button></div>`;
+    $('[data-remove-file]', previewEl).onclick = () => { pendingFile = null; renderAttach(); };
+  }
+
+  async function handleFile(f) {
+    if (!f) return;
+    reading = true; pendingFile = null; renderAttach();
+    try {
+      const { extractFileText } = await import('./file-extract.js');
+      pendingFile = await extractFileText(f);
+    } catch (err) {
+      toast(err.message || 'Could not read that file', 'warn');
+      pendingFile = null;
+    } finally {
+      reading = false; renderAttach();
+    }
+  }
 
   function renderSide() {
     sideEl.innerHTML = threads().map((t) => `
@@ -130,9 +168,11 @@ export function chatView({ autoMode } = {}) {
   }
 
   function msgHtml(m) {
+    const fileChip = m.file ? `<div class="msg-file">${icon('file', 14)} ${esc(m.file.name)}</div>` : '';
+    const body = m.role === 'assistant' ? md(m.content) : (esc(m.content) || '<em>(file attached)</em>');
     return `<div class="msg ${m.role}">
       <div class="msg-avatar">${icon(m.role === 'user' ? 'user' : 'compass', 17)}</div>
-      <div class="msg-bubble">${m.role === 'assistant' ? md(m.content) : esc(m.content)}</div>
+      <div class="msg-bubble">${fileChip}${body}</div>
     </div>`;
   }
 
@@ -148,14 +188,19 @@ export function chatView({ autoMode } = {}) {
 
   async function send(text, { silent } = {}) {
     text = String(text ?? inputEl.value).trim();
-    if (!text || busy) return;
+    if (busy) return;
+    if (reading) { toast('Still reading the file — one sec…'); return; }
+    const fileAtt = silent ? null : pendingFile;
+    if (!text && !fileAtt) return;
+    if (!text && fileAtt) text = 'Please analyse this file and summarise the key points.';
     inputEl.value = ''; autosize();
+    if (fileAtt) { pendingFile = null; renderAttach(); }
     const t = activeThread() || newThread();
     busy = true;
     update((s) => {
       const th = s.chat.threads.find((x) => x.id === t.id);
-      if (!silent) th.messages.push({ role: 'user', content: text });
-      if (th.title === 'New conversation') th.title = text.slice(0, 42);
+      if (!silent) th.messages.push({ role: 'user', content: text, ...(fileAtt ? { file: fileAtt } : {}) });
+      if (th.title === 'New conversation') th.title = (text || fileAtt?.name || 'New conversation').slice(0, 42);
     }, { type: 'chat' });
     logActivity(t.mode === 'interview' ? 'mock_interview' : 'chat_message');
     renderSide(); renderChips(); renderMsgs();
@@ -167,7 +212,11 @@ export function chatView({ autoMode } = {}) {
     const bubble = $('.msg-bubble', holder);
 
     const sys = { role: 'system', content: systemPrompt(t.mode) + (t.mode === 'resume' ? `\n\nUSER RESUME:\n${resumePlainText()}` : '') };
-    const history = activeThread().messages.map(({ role, content }) => ({ role, content }));
+    // Expand any attached file into the message text sent to the model.
+    const expand = (m) => (m.file
+      ? `${m.content || 'Please analyse the attached file.'}\n\n[Attached file: ${m.file.name}]\n"""\n${m.file.text}\n"""${m.file.truncated ? '\n(Note: the file was long and has been trimmed.)' : ''}`
+      : m.content);
+    const history = activeThread().messages.map((m) => ({ role: m.role, content: expand(m) }));
     if (silent) history.push({ role: 'user', content: text });
 
     let acc = '';
@@ -200,6 +249,8 @@ export function chatView({ autoMode } = {}) {
   inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
   $('[data-send]', root).onclick = () => send();
   $('[data-new]', root).onclick = () => { newThread(); renderAll(); };
+  $('[data-attach]', root).onclick = () => fileInput.click();
+  fileInput.addEventListener('change', () => { const f = fileInput.files[0]; fileInput.value = ''; handleFile(f); });
 
   renderAll();
   if (activeThread()?.pending) { const p = activeThread().pending; delete activeThread().pending; send(p, { silent: true }); }
