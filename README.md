@@ -2,7 +2,7 @@
 
 **Live: https://navixa-woad.vercel.app**
 
-A career-navigation web app for students and working professionals. No build step, no database, no paid services — everything runs in the browser with free public APIs.
+A career-navigation web app for students and working professionals. No build step and no framework — the client is plain ES modules running on free public APIs, backed by Supabase (Postgres) for Google sign-in, cloud sync and a role-guarded admin console. With no backend configured it falls back to a fully local, browser-only mode.
 
 ## Features
 
