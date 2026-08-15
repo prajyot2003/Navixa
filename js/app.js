@@ -32,6 +32,10 @@ const ROUTES = {
 const app = $('#app');
 let layoutEl = null;
 
+const NAV_KEY = 'navixa:nav-collapsed';
+const isMobile = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 760px)').matches;
+const navCollapsed = () => { try { return localStorage.getItem(NAV_KEY) === '1'; } catch { return false; } };
+
 function route() {
   const h = (location.hash || '').replace(/^#\/?/, '').split('?')[0];
   if (/^(access_token|error|provider_token|code)=/.test(h)) return 'dashboard'; // OAuth callback hash — Supabase parses it
@@ -112,7 +116,17 @@ function buildLayout() {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     saveGlobal({ theme: next }); applyTheme(); updateThemeBtn();
   };
-  $('[data-menu]', layoutEl).onclick = () => { $('.sidebar', layoutEl).classList.add('open'); $('[data-scrim]', layoutEl).classList.add('show'); };
+  // Hamburger: drawer on mobile, collapse/expand the sidebar on desktop.
+  if (navCollapsed()) layoutEl.classList.add('nav-collapsed');
+  $('[data-menu]', layoutEl).onclick = () => {
+    if (isMobile()) {
+      const open = $('.sidebar', layoutEl).classList.toggle('open');
+      $('[data-scrim]', layoutEl).classList.toggle('show', open);
+    } else {
+      const collapsed = layoutEl.classList.toggle('nav-collapsed');
+      try { localStorage.setItem(NAV_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
+    }
+  };
   $('[data-scrim]', layoutEl).onclick = closeMenu;
   $$('.nav-item[data-nav]', layoutEl).forEach((a) => a.addEventListener('click', closeMenu));
   $('.brand', layoutEl).addEventListener('click', closeMenu);

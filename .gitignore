@@ -6,7 +6,8 @@ dist/
 deploy/*.tar.gz
 
 # scratch files
-_bundle-smoke.mjs
+_*.mjs
+_*.html
 
 # OS / editor
 .DS_Store
