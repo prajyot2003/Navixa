@@ -93,11 +93,17 @@ export function jobsView() {
       <label class="switch"><input type="checkbox" data-remote><span class="track"></span>Remote only</label>
     </div>
     <div class="src-status" data-status></div>
+    <div data-saved-searches></div>
+    <div data-salary></div>
     <div class="job-list mt-2" data-list>${skeleton(4)}</div>`;
 
   const listEl = $('[data-list]', root);
   const statusEl = $('[data-status]', root);
   let all = [];
+  let tools = null;      // lazily-loaded search-tools module
+  let activeSearch = ''; // id of the saved search currently applied
+
+  import('./search-tools.js').then((m) => { tools = m; renderSaved(); render(); });
 
   async function load(force = false) {
     st.loading = true;
@@ -112,15 +118,94 @@ export function jobsView() {
   }
 
   function render() {
-    const jobs = filterJobs(all, st).slice(0, 60);
+    let jobs = filterJobs(all, st);
+    const beforeDedupe = jobs.length;
+    if (tools) jobs = tools.collapseDuplicates(jobs);
+    const merged = beforeDedupe - jobs.length;
+    jobs = jobs.slice(0, 60);
+
+    renderSalary(jobs);
+
     listEl.innerHTML = '';
     if (!jobs.length) {
       listEl.innerHTML = emptyState('briefcase', 'No jobs match', 'Try broader keywords or fewer filters. Sources refresh every few minutes.');
       return;
     }
-    const count = el(`<p class="muted mb-1">${jobs.length} matching role${jobs.length === 1 ? '' : 's'}</p>`);
-    listEl.appendChild(count);
-    jobs.forEach((j) => listEl.appendChild(jobCard(j)));
+
+    const unseen = tools && activeSearch ? new Set(tools.unseenFor(activeSearch, jobs).map((j) => j.id)) : new Set();
+    listEl.appendChild(el(`<p class="muted mb-1">${jobs.length} matching role${jobs.length === 1 ? '' : 's'}${
+      merged > 0 ? ` · ${merged} duplicate${merged === 1 ? '' : 's'} merged` : ''}${
+      unseen.size ? ` · <b style="color:var(--accent-strong)">${unseen.size} new</b>` : ''}</p>`));
+
+    jobs.forEach((j) => {
+      const card = jobCard(j);
+      if (unseen.has(j.id)) card.classList.add('is-new');
+      if (j.alsoOn?.length) {
+        const meta = $('.job-meta', card);
+        if (meta) meta.insertAdjacentHTML('beforeend', `<span class="badge" title="Also posted on ${esc(j.alsoOn.join(', '))}">+${j.alsoOn.length} source${j.alsoOn.length === 1 ? '' : 's'}</span>`);
+      }
+      listEl.appendChild(card);
+    });
+
+    if (tools && activeSearch) tools.markSeen(activeSearch, jobs);
+  }
+
+  function renderSalary(jobs) {
+    const host = $('[data-salary]', root);
+    if (!host || !tools) return;
+    const ins = tools.salaryInsights(jobs);
+    host.innerHTML = ins ? `<div class="sal-band">
+      ${icon('zap', 15)}
+      <span>Typical pay <b>${esc(ins.text)}</b> · median <b>${esc(ins.medianText)}</b></span>
+      <span class="muted">from ${ins.count} listing${ins.count === 1 ? '' : 's'} that disclose pay (${ins.disclosed}% of results)</span>
+    </div>` : '';
+  }
+
+  function renderSaved() {
+    const host = $('[data-saved-searches]', root);
+    if (!host || !tools) return;
+    const list = tools.savedSearches();
+    host.innerHTML = `<div class="saved-bar">
+      ${list.map((sc) => `<button class="chip ${sc.id === activeSearch ? 'on' : ''}" data-run="${esc(sc.id)}" title="${esc([sc.q, sc.type, sc.source, sc.remoteOnly ? 'remote' : ''].filter(Boolean).join(' · '))}">${icon('search', 12)} ${esc(sc.name)}<i data-del="${esc(sc.id)}" title="Delete">${icon('x', 11)}</i></button>`).join('')}
+      <button class="chip" data-save-search>${icon('plus', 12)} Save this search</button>
+    </div>`;
+
+    $('[data-save-search]', host).onclick = () => {
+      if (!st.q && !st.type && !st.source && !st.remoteOnly) { toast('Set a search or filter first', 'warn'); return; }
+      const body = el(`<div class="field"><label>Name this search</label>
+        <input class="input" data-name value="${esc(st.q || 'My search')}" placeholder="e.g. Remote React roles"></div>
+        <p class="muted">We'll highlight listings you haven't seen yet each time you run it.</p>`);
+      modal({
+        title: 'Save search', body,
+        actions: [{ label: 'Cancel' }, {
+          label: 'Save', primary: true,
+          onClick: () => {
+            activeSearch = tools.saveSearch({ name: $('[data-name]', body).value.trim(), ...st });
+            renderSaved(); render(); toast('Search saved');
+          },
+        }],
+      });
+    };
+    $$('[data-run]', host).forEach((b) => b.onclick = (e) => {
+      if (e.target.closest('[data-del]')) return;
+      const sc = tools.savedSearches().find((x) => x.id === b.dataset.run);
+      if (!sc) return;
+      activeSearch = sc.id;
+      Object.assign(st, { q: sc.q || '', type: sc.type || '', source: sc.source || '', remoteOnly: !!sc.remoteOnly, sort: sc.sort || 'auto' });
+      $('[data-q]', root).value = st.q;
+      $('[data-type]', root).value = st.type;
+      $('[data-source]', root).value = st.source;
+      $('[data-sort]', root).value = st.sort;
+      $('[data-remote]', root).checked = st.remoteOnly;
+      renderSaved();
+      load();
+    });
+    $$('[data-del]', host).forEach((x) => x.onclick = (e) => {
+      e.stopPropagation();
+      tools.deleteSearch(x.dataset.del);
+      if (activeSearch === x.dataset.del) activeSearch = '';
+      renderSaved();
+    });
   }
 
   let searchTimer;

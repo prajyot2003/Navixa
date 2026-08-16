@@ -579,6 +579,17 @@ textarea.input { resize: vertical; min-height: 74px; }
 .typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
 .chat-input-bar { border-top: 1px solid var(--border); padding: 13px 15px; display: flex; gap: 10px; align-items: flex-end; }
 .chat-input-bar textarea { flex: 1; max-height: 130px; min-height: 46px; border-radius: 20px; }
+/* --- saved searches + salary band --- */
+.saved-bar { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+.saved-bar .chip { cursor: pointer; background: var(--surface); display: inline-flex; align-items: center; gap: 6px; }
+.saved-bar .chip:hover { border-color: var(--accent); color: var(--accent-strong); }
+.saved-bar .chip i { display: inline-grid; place-items: center; opacity: .45; border-radius: 5px; padding: 1px; }
+.saved-bar .chip i:hover { opacity: 1; color: var(--a2c, #FB7185); background: var(--surface-3); }
+.sal-band { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 12px; padding: 10px 14px;
+  background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 13px; font-size: 13.4px; color: var(--text-2); }
+.sal-band b { color: var(--text); }
+.job-card.is-new { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--card-shadow); }
+
 /* --- tracker insights --- */
 .ins-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .ins-stat { display: flex; flex-direction: column; gap: 1px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px; }
