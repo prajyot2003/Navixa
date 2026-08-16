@@ -17,6 +17,7 @@ function isSaved(id) { return !!getState().jobs.saved[id]; }
 
 export function toggleSave(job) {
   const saved = isSaved(job.id);
+  if (!saved) import('./tracker-tools.js').then(({ recordStage }) => recordStage(job.id, 'saved'));
   update((s) => {
     if (saved) { delete s.jobs.saved[job.id]; delete s.jobs.board[job.id]; }
     else { s.jobs.saved[job.id] = job; s.jobs.board[job.id] = s.jobs.board[job.id] || 'saved'; }
@@ -204,9 +205,17 @@ export function trackerView() {
       <div><h2>Application tracker</h2><p class="lede">Drag cards between stages. Saved jobs land here automatically.</p></div>
       <button class="btn btn-primary" data-add>${icon('plus', 17)} Add manually</button>
     </div>
+    <div data-insights class="mb-2"></div>
     <div class="kanban" data-board></div>`;
 
   const board = $('[data-board]', root);
+  let insights = null;
+  import('./tracker-ui.js').then(({ insightsPanel }) => {
+    const host = $('[data-insights]', root);
+    if (!host) return;
+    insights = insightsPanel();
+    host.appendChild(insights);
+  });
 
   function allTracked() {
     const s = getState();
@@ -232,6 +241,8 @@ export function trackerView() {
         <div class="row">
           <div class="row" style="gap:4px">
             <button class="icon-btn plain" data-note title="Notes">${icon('edit', 15)}</button>
+            ${col === 'interview' ? `<button class="icon-btn plain" data-schedule title="Set interview date + calendar file">${icon('calendar', 15)}</button>` : ''}
+            ${col === 'applied' || col === 'interview' ? `<button class="icon-btn plain" data-follow title="Draft a follow-up">${icon('mail', 15)}</button>` : ''}
             ${job.url ? `<a class="icon-btn plain" href="${esc(job.url)}" target="_blank" rel="noopener" title="Open listing">${icon('external', 15)}</a>` : ''}
             <button class="icon-btn plain" data-remove title="Remove">${icon('trash', 15)}</button>
           </div>
@@ -253,9 +264,11 @@ export function trackerView() {
     const prev = getState().jobs.board[id];
     if (prev === colId) return;
     update((s) => { s.jobs.board[id] = colId; }, { type: 'jobs' });
+    import('./tracker-tools.js').then(({ recordStage }) => recordStage(id, colId));
     if (colId === 'applied') logActivity('job_apply'); else logActivity('tracker_move');
     checkAchievements();
     render();
+    insights?.refresh?.();
   }
 
   function bindDnd() {
@@ -282,9 +295,24 @@ export function trackerView() {
       const id = card.dataset.id;
       $('[data-move]', card).onchange = (e) => moveCard(id, e.target.value);
       $('[data-remove]', card).onclick = () => {
-        update((s) => { delete s.jobs.saved[id]; delete s.jobs.custom[id]; delete s.jobs.board[id]; delete s.jobs.notes[id]; }, { type: 'jobs' });
-        render();
+        update((s) => {
+          delete s.jobs.saved[id]; delete s.jobs.custom[id]; delete s.jobs.board[id]; delete s.jobs.notes[id];
+          if (s.jobs.log) delete s.jobs.log[id];
+          if (s.jobs.dates) delete s.jobs.dates[id];
+        }, { type: 'jobs' });
+        render(); insights?.refresh?.();
       };
+      const job = allTracked()[id];
+      $('[data-schedule]', card)?.addEventListener('click', () => {
+        import('./tracker-ui.js').then(({ openSchedule }) => openSchedule({ id, job }));
+      });
+      $('[data-follow]', card)?.addEventListener('click', () => {
+        import('./tracker-tools.js').then(({ stageLog, daysSince }) => {
+          const col = getState().jobs.board[id] || 'saved';
+          const days = daysSince(stageLog(id)[col]) ?? 0;
+          import('./tracker-ui.js').then(({ openFollowUp }) => openFollowUp({ id, job, days, col }));
+        });
+      });
       $('[data-note]', card).onclick = () => {
         const s = getState();
         const body = el(`<div><div class="field"><label>Notes for this application</label>
