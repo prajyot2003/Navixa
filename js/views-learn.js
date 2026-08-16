@@ -89,7 +89,12 @@ export function learnView() {
         <button class="btn btn-primary" data-go>Search</button>
       </div>
       <div class="chip-cloud mb-2" data-sugg></div>
+      <div data-gap class="mb-2"></div>
       <div data-results><div class="media-grid">${skeleton(6, 'card media-card')}</div></div>`;
+    import('./tailor-ui.js').then(({ skillGapPanel }) => {
+      const host = $('[data-gap]', pane);
+      if (host) host.appendChild(skillGapPanel());
+    });
     const sugg = [...s.profile.interests.slice(0, 4), ...s.profile.skills.slice(0, 3)].filter(Boolean).slice(0, 6);
     $('[data-sugg]', pane).innerHTML = sugg.map((x) => `<button class="chip-pick">${esc(x)}</button>`).join('');
     $$('.chip-pick', pane).forEach((c) => c.onclick = () => { q = c.textContent; $('[data-q]', pane).value = q; load(); });
@@ -97,6 +102,16 @@ export function learnView() {
     $('[data-q]', pane).addEventListener('keydown', (e) => { if (e.key === 'Enter') { q = e.target.value.trim(); load(); } });
     $('[data-kind]', pane).value = kind;
     $('[data-kind]', pane).onchange = (e) => { kind = e.target.value; load(); };
+    // skill-gap panel asks us to search for a specific skill
+    const onGapSearch = (e) => {
+      if (!root.isConnected) { window.removeEventListener('navixa:learn-search', onGapSearch); return; }
+      q = String(e.detail || '').trim() || q;
+      const input = $('[data-q]', pane);
+      if (input) input.value = q;
+      load();
+      $('[data-results]', pane)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.addEventListener('navixa:learn-search', onGapSearch);
     load();
   }
 

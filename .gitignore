@@ -8,6 +8,7 @@ deploy/*.tar.gz
 # scratch files
 _*.mjs
 _*.html
+_*.json
 
 # OS / editor
 .DS_Store

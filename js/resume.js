@@ -143,6 +143,8 @@ export function resumeView() {
     <div class="page-head">
       <div><h2>Resume builder</h2><p class="lede">Fill in the form — the preview updates live. Export as PDF when it shines.</p></div>
       <div class="row">
+        <button class="btn btn-ghost" data-act="tailor" title="Compare your resume with a job posting">${icon('target', 17)} Tailor to job</button>
+        <button class="btn btn-ghost" data-act="letter" title="Generate a cover letter for a job">${icon('edit', 17)} Cover letter</button>
         <button class="btn btn-ghost" data-act="import" title="Import from PDF, Word (.docx) or Navixa JSON">${icon('upload', 17)} Import</button>
         <button class="btn btn-ghost" data-act="export">${icon('download', 17)} JSON</button>
         <button class="btn btn-primary" data-act="print">${icon('file', 17)} Download PDF</button>
@@ -309,6 +311,12 @@ export function resumeView() {
     const act = e.target.closest('[data-act]');
     if (!act) return;
     if (act.dataset.act === 'print') { logActivity('resume_edit'); printResume(); }
+    if (act.dataset.act === 'tailor') {
+      import('./tailor-ui.js').then(({ openTailor }) => openTailor(null, () => { renderForm(); refreshPreview(); }));
+    }
+    if (act.dataset.act === 'letter') {
+      import('./tailor-ui.js').then(({ openCoverLetter }) => openCoverLetter(null));
+    }
     if (act.dataset.act === 'export') {
       const blob = new Blob([JSON.stringify(getResume(), null, 2)], { type: 'application/json' });
       const a = el(`<a download="navixa-resume.json" href="${URL.createObjectURL(blob)}"></a>`);

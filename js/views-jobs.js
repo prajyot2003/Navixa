@@ -50,11 +50,15 @@ export function jobCard(job, { match } = {}) {
     <div class="job-side">
       ${match ? `<div class="match-ring" style="--pct:${match.pct}" title="Match score"><span>${match.pct}%</span></div>` : ''}
       <div class="row">
+        <button class="icon-btn" data-tailor title="Tailor your resume to this job">${icon('target', 17)}</button>
         <button class="icon-btn" data-save title="${saved ? 'Remove from tracker' : 'Save to tracker'}" style="${saved ? 'color:var(--accent-strong);border-color:var(--accent)' : ''}">${icon(saved ? 'check' : 'plus', 17)}</button>
         <a class="btn btn-soft btn-sm" href="${esc(job.url)}" target="_blank" rel="noopener">Apply ${icon('external', 14)}</a>
       </div>
     </div>
   </div>`);
+  $('[data-tailor]', card).onclick = () => {
+    import('./tailor-ui.js').then(({ openTailor }) => openTailor(job));
+  };
   $('[data-save]', card).onclick = (e) => {
     const nowSaved = toggleSave(job);
     const b = e.currentTarget;
