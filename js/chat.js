@@ -68,7 +68,10 @@ export function chatView({ autoMode } = {}) {
   root.innerHTML = `
     <div class="page-head">
       <div><h2>AI career chat</h2><p class="lede">Job market questions, interview practice, resume feedback — powered by a free open-source model (${esc(llmConfig().model)}).</p></div>
-      <button class="btn btn-ghost" data-new>${icon('plus', 17)} New chat</button>
+      <div class="row" style="gap:8px">
+        <button class="btn btn-ghost" data-prep>${icon('mic', 17)} Interview prep</button>
+        <button class="btn btn-ghost" data-new>${icon('plus', 17)} New chat</button>
+      </div>
     </div>
     <div class="chat-layout">
       <div class="chat-side"></div>
@@ -249,6 +252,7 @@ export function chatView({ autoMode } = {}) {
   inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
   $('[data-send]', root).onclick = () => send();
   $('[data-new]', root).onclick = () => { newThread(); renderAll(); };
+  $('[data-prep]', root).onclick = () => import('./interview-ui.js').then(({ openInterviewPrep }) => openInterviewPrep(null));
   $('[data-attach]', root).onclick = () => fileInput.click();
   fileInput.addEventListener('change', () => { const f = fileInput.files[0]; fileInput.value = ''; handleFile(f); });
 

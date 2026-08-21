@@ -579,6 +579,19 @@ textarea.input { resize: vertical; min-height: 74px; }
 .typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
 .chat-input-bar { border-top: 1px solid var(--border); padding: 13px 15px; display: flex; gap: 10px; align-items: flex-end; }
 .chat-input-bar textarea { flex: 1; max-height: 130px; min-height: 46px; border-radius: 20px; }
+/* --- interview prep --- */
+.q-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.q-item:last-child { border-bottom: 0; }
+.q-text { font-weight: 600; font-size: 14px; margin-bottom: 3px; }
+.q-hint { font-size: 12.6px; color: var(--accent-strong); margin: 2px 0 7px; }
+.q-item .btn { margin-top: 4px; }
+.prac-q { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 13px; font-size: 14.5px; display: flex; gap: 9px; align-items: flex-start; }
+.prac-timer { font-family: var(--font-mono); font-size: 15px; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.prac-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin: 10px 0 6px; font-size: 13px; color: var(--text-3); }
+.prac-metrics b { color: var(--text); font-size: 15px; font-family: var(--font-display); }
+.fb-list { margin: 4px 0 0; padding-left: 18px; font-size: 13.6px; line-height: 1.7; }
+.btn-danger { background: var(--a2c, #FB7185); color: #fff; border-color: transparent; }
+
 /* --- saved searches + salary band --- */
 .saved-bar { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
 .saved-bar .chip { cursor: pointer; background: var(--surface); display: inline-flex; align-items: center; gap: 6px; }

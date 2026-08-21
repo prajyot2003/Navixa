@@ -326,6 +326,7 @@ export function trackerView() {
         <div class="row">
           <div class="row" style="gap:4px">
             <button class="icon-btn plain" data-note title="Notes">${icon('edit', 15)}</button>
+            ${col === 'interview' ? `<button class="icon-btn plain" data-prep title="Interview prep for this role">${icon('mic', 15)}</button>` : ''}
             ${col === 'interview' ? `<button class="icon-btn plain" data-schedule title="Set interview date + calendar file">${icon('calendar', 15)}</button>` : ''}
             ${col === 'applied' || col === 'interview' ? `<button class="icon-btn plain" data-follow title="Draft a follow-up">${icon('mail', 15)}</button>` : ''}
             ${job.url ? `<a class="icon-btn plain" href="${esc(job.url)}" target="_blank" rel="noopener" title="Open listing">${icon('external', 15)}</a>` : ''}
@@ -388,6 +389,9 @@ export function trackerView() {
         render(); insights?.refresh?.();
       };
       const job = allTracked()[id];
+      $('[data-prep]', card)?.addEventListener('click', () => {
+        import('./interview-ui.js').then(({ openInterviewPrep }) => openInterviewPrep(job));
+      });
       $('[data-schedule]', card)?.addEventListener('click', () => {
         import('./tracker-ui.js').then(({ openSchedule }) => openSchedule({ id, job }));
       });
