@@ -398,6 +398,7 @@ export function profileView() {
     }
   });
   function rerender() { root.replaceWith(profileView()); }
+  import('./public-profile.js').then(({ publicProfileCard }) => root.appendChild(publicProfileCard()));
   return root;
 }
 

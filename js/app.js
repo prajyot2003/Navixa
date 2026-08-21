@@ -158,8 +158,25 @@ function updateChrome() {
 
 export function rebuildLayout() { layoutEl = null; }
 
+// Public profile pages are readable without an account — handle before the auth gate.
+function publicSlug() {
+  const h = (location.hash || '').replace(/^#\/?/, '').split('?')[0];
+  const parts = h.split('/');
+  return parts[0] === 'u' && parts[1] ? decodeURIComponent(parts[1]) : '';
+}
+
 export function render() {
   applyTheme();
+  const slug = publicSlug();
+  if (slug) {
+    layoutEl = null;
+    app.innerHTML = '';
+    document.title = 'Profile · Navixa';
+    import('./public-profile.js').then(({ publicProfileView }) => {
+      if (publicSlug() === slug) { app.innerHTML = ''; app.appendChild(publicProfileView(slug)); }
+    });
+    return;
+  }
   const u = currentUser();
   if (!u) { renderLogin(); document.title = 'Navixa — navigate your career'; return; }
   const s = getState();
@@ -192,6 +209,12 @@ subscribe((evt) => { if (evt.type === 'gamify' || evt.type === 'achievement') up
 applyTheme();
 initPalette();
 initMotion();
+// Offline support — only over https (or localhost); harmless if unsupported.
+if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw] registration failed', e));
+  });
+}
 (async () => {
   try {
     if (cloudEnabled()) {

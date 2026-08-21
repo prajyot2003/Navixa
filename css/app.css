@@ -579,6 +579,28 @@ textarea.input { resize: vertical; min-height: 74px; }
 .typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
 .chat-input-bar { border-top: 1px solid var(--border); padding: 13px 15px; display: flex; gap: 10px; align-items: flex-end; }
 .chat-input-bar textarea { flex: 1; max-height: 130px; min-height: 46px; border-radius: 20px; }
+/* --- public profile page --- */
+.pub-wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 70px; }
+.pub-card { background: var(--surface); border: 1px solid var(--border); border-radius: 22px; padding: 38px 40px; box-shadow: var(--card-shadow); }
+.pub-head h1 { font-family: var(--font-display); font-size: clamp(28px, 4vw, 40px); letter-spacing: -.02em; margin: 0; }
+.pub-role { color: var(--accent-strong); font-weight: 600; font-size: 16px; margin: 4px 0 0; }
+.pub-meta { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0 0; font-size: 13.4px; color: var(--text-3); align-items: center; }
+.pub-meta a { color: var(--text-2); }
+.pub-sec { margin-top: 30px; }
+.pub-sec h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-3); margin: 0 0 12px; padding-bottom: 7px; border-bottom: 1px solid var(--border); }
+.pub-item { margin-bottom: 16px; font-size: 14.4px; }
+.pub-item ul { margin: 6px 0 0; padding-left: 19px; line-height: 1.72; }
+.pub-when { display: block; font-size: 12.6px; color: var(--text-3); margin-top: 1px; }
+.pub-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.pub-chips span { padding: 5px 12px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); font-size: 13px; }
+.pub-foot { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; font-size: 12.6px; }
+.pub-foot a { color: var(--text-3); }
+.pub-empty { text-align: center; color: var(--text-3); }
+.pub-empty h1 { margin: 14px 0 6px; }
+.pub-empty .btn { margin-top: 18px; }
+@media (max-width: 620px) { .pub-card { padding: 26px 20px; border-radius: 18px; } }
+@media print { .pub-card { border: 0; box-shadow: none; } .pub-foot { display: none; } }
+
 /* --- interview prep --- */
 .q-item { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .q-item:last-child { border-bottom: 0; }
