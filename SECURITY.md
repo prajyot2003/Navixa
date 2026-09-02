@@ -63,6 +63,7 @@ user data. That shapes everything below:
 | 4 | `/api/llm` was an open, unauthenticated AI relay — anyone could farm free inference against the project's quota. Same for `/api/proxy` and `/api/videos`. | **Medium** | Added `api/_guard.js`: same-origin check + per-IP rate limits (12/min LLM, 30/min videos, 60/min proxy). Wildcard CORS replaced with origin reflection + `Vary`. |
 | 5 | Supabase loaded from a floating `@2` CDN tag — the CDN could serve new code into the page at any time. | **Medium** | Pinned to an exact version (`2.112.4`) and integrity-checked with SHA-384 SRI, so the browser refuses the file if a single byte differs. |
 | 6 | Inline `onerror=` handler on job logos would break under a strict CSP. | Low | Replaced with an `addEventListener` fallback. |
+| 7 | RLS restricts which *rows* you can update, not which *columns*. Within their own profile row a user could rewrite `email` — the field the admin console and feedback records identify people by — by calling PostgREST directly with the public anon key. `role` was already protected. | **Medium** | `supabase-harden-profiles.sql` replaces the role-only trigger with a full identity guard covering `id`, `email`, `role` and `created_at`. Verify with `supabase-verify-profiles.sql`. |
 
 ---
 
@@ -108,6 +109,13 @@ Being straight about this matters more than a green checklist.
    `crossorigin` (SRI is silently ignored without the latter).
 3. **`app_config` is world-readable** (`using (true)`) by design, so the app can
    read config while signed out. Never put anything sensitive in that table.
+4. **Gamification numbers are client-trusted.** `xp`, `level`, `streak` and
+   `stats` are computed in the browser and pushed up, so a signed-in user can
+   inflate their own. There is no leaderboard and nothing is awarded for them,
+   so this is a cosmetic self-own. Making it tamper-proof needs server-side
+   progress tracking, which this architecture deliberately does not have.
+   Identity columns (`id`, `email`, `role`, `created_at`) *are* locked — see
+   `supabase-harden-profiles.sql`.
 4. **Profile view counts can be inflated** — `bump_profile_views` is callable
    repeatedly. Cosmetic only.
 5. **Prompt injection is not solved.** A malicious job description or uploaded
