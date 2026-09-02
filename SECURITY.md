@@ -5,9 +5,35 @@ How Navixa is hardened, what was fixed, and — honestly — what risk remains.
 Run the security regression suite any time:
 
 ```bash
-node tests/security.mjs   # 58 checks
-node tests/run.mjs        # 33 functional tests
+node tests/security.mjs    # 62 checks
+node tests/ratelimit.mjs   # 19 checks (both backends + failure modes)
+node tests/run.mjs         # 33 functional tests
 ```
+
+## Rate limiting
+
+Limits are per IP **per endpoint**, so browsing jobs cannot consume the AI chat
+budget: `llm` 12/min, `videos` 30/min, `proxy` 60/min.
+
+By default the counter is in-memory, which is per serverless instance and
+therefore best-effort. To make it durable and shared across instances, add
+Vercel's **Upstash Redis** integration (Vercel KV was sunset in Dec 2024 and
+existing stores were migrated to Upstash). The integration injects
+`KV_REST_API_URL` and `KV_REST_API_TOKEN`, which is all this code needs — no npm
+package, no build step. `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
+also work.
+
+Design notes:
+
+- The IP is **hashed** before use — the limiter needs to tell callers apart, not
+  identify them, so no raw IPs are stored.
+- Redis calls time out at 1.2s and **fail open to the in-memory limiter**. A
+  Redis outage must not take the app down, but it should not remove all limits
+  either. Tested against a refused connection, an HTTP 500, and a hung server.
+- The window does not slide: the TTL is set with `NX` so a burst cannot keep
+  extending its own window.
+- `X-RateLimit-Backend` on a 429 response says which backend decided, which makes
+  it obvious in production whether Redis is actually being used.
 
 ---
 
@@ -64,10 +90,12 @@ user data. That shapes everything below:
 
 Being straight about this matters more than a green checklist.
 
-1. **Rate limiting is best-effort.** It is in-memory and therefore per-instance;
-   serverless instances scale out and recycle, so a distributed attacker can
-   exceed the nominal rate. It stops opportunistic abuse, not a funded one.
-   A durable fix needs shared state (Vercel KV / Upstash Redis).
+1. **Rate limiting is only as strong as its backend.** With Upstash Redis
+   configured the budget is shared across instances and holds properly. Without
+   it, the in-memory fallback is per-instance and a distributed attacker can
+   exceed the nominal rate. Either way the limit is **per IP**, so a botnet or a
+   large NAT/VPN pool is not meaningfully constrained; blocking that needs
+   upstream protection (Vercel WAF / Cloudflare), not application code.
 2. **Upgrading Supabase is now a two-step change.** The CDN script is pinned and
    SRI-protected, so bumping the version *without* regenerating the hash will
    make the browser refuse the script and break sign-in. Always do both:

@@ -14,7 +14,7 @@ module.exports = async (req, res) => {
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   // Unauthenticated relay: cap per-IP use so it cannot be farmed for free inference.
-  if (blocked(req, res, { limit: 12, windowMs: 60_000 })) return;
+  if (await blocked(req, res, { bucket: 'llm', limit: 12, windowMs: 60_000 })) return;
   try {
     const body = typeof req.body === 'object' && req.body ? req.body : JSON.parse(req.body || '{}');
     const model = ALLOWED_MODELS.has(body.model) ? body.model : 'gemma3:27b';

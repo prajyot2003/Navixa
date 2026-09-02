@@ -76,7 +76,7 @@ function fmtDur(sec) {
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
   res.setHeader('Vary', 'Origin');
-  if (blocked(req, res, { limit: 30, windowMs: 60_000 })) return;
+  if (await blocked(req, res, { bucket: 'videos', limit: 30, windowMs: 60_000 })) return;
   const q = String(req.query.q || '').slice(0, 120).trim();
   if (!q) return res.status(400).json({ error: 'q required' });
   try {
