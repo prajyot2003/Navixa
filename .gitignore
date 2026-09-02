@@ -14,3 +14,5 @@ _*.json
 .DS_Store
 *.log
 .vercel/
+.vercel
+.env*

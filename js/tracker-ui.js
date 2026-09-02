@@ -1,5 +1,5 @@
 // Navixa — tracker insights: funnel analytics, stale-application nudges, exports.
-import { $, $$, el, esc, icon, modal, toast, skeleton } from './utils.js';
+import { $, $$, el, esc, icon, modal, toast, skeleton, safeUrl} from './utils.js';
 import { getState } from './store.js';
 import {
   analytics, staleApplications, followUpDraft, toCsv, toIcs, download,
@@ -19,7 +19,7 @@ export function openFollowUp({ id, job, days, col }) {
         <textarea class="input" data-text rows="12">${esc(text)}</textarea></div>
       <div class="row" style="gap:8px">
         <button class="btn btn-primary btn-sm" data-copy>${icon('copy', 15)} Copy</button>
-        ${job.url ? `<a class="btn btn-ghost btn-sm" href="${esc(job.url)}" target="_blank" rel="noopener">${icon('external', 15)} Open listing</a>` : ''}
+        ${job.url ? `<a class="btn btn-ghost btn-sm" href="${esc(safeUrl(job.url))}" target="_blank" rel="noopener">${icon('external', 15)} Open listing</a>` : ''}
       </div>
       <p class="muted" style="margin-top:8px">${icon('info', 13)} Send from your own email — Navixa never emails on your behalf.</p>`;
     $('[data-copy]', out).onclick = async () => {

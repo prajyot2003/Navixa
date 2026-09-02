@@ -4,7 +4,7 @@
 import { client, cloudEnabled, cloudSession } from './cloud.js';
 import { getResume } from './resume.js';
 import { getState } from './store.js';
-import { $, $$, el, esc, icon, toast, modal, skeleton } from './utils.js';
+import { $, $$, el, esc, icon, toast, modal, skeleton, safeUrl} from './utils.js';
 
 export const slugify = (s) => String(s || '')
   .toLowerCase().trim()
@@ -139,7 +139,8 @@ export function publicProfileView(slug) {
           <p class="pub-meta">
             ${d.location ? `<span>${icon('pin', 13)} ${esc(d.location)}</span>` : ''}
             ${links.map(([k, v]) => {
-              const href = k === 'email' ? `mailto:${v}` : k === 'phone' ? `tel:${v}` : (/^https?:/.test(v) ? v : `https://${v}`);
+              const raw = k === 'email' ? `mailto:${v}` : k === 'phone' ? `tel:${v}` : (/^https?:/i.test(v) ? v : `https://${v}`);
+              const href = safeUrl(raw);
               return `<a href="${esc(href)}" target="_blank" rel="noopener nofollow">${esc(v.replace(/^https?:\/\//, ''))}</a>`;
             }).join('')}
           </p>
@@ -156,7 +157,7 @@ export function publicProfileView(slug) {
 
         ${sec('Projects', (d.projects || []).map((p) => `
           <div class="pub-item">
-            <b>${p.link ? `<a href="${esc(/^https?:/.test(p.link) ? p.link : `https://${p.link}`)}" target="_blank" rel="noopener nofollow">${esc(p.name || '')}</a>` : esc(p.name || '')}</b>
+            <b>${p.link ? `<a href="${esc(safeUrl(/^https?:/i.test(p.link) ? p.link : `https://${p.link}`))}" target="_blank" rel="noopener nofollow">${esc(p.name || '')}</a>` : esc(p.name || '')}</b>
             ${p.desc ? ` — ${esc(p.desc)}` : ''}
             ${bullets(p.bullets)}
           </div>`).join(''))}

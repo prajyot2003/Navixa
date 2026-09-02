@@ -1,15 +1,20 @@
 // Vercel serverless: relay chat completions to the free keyless gateway (avoids client CORS/network issues)
+const { blocked } = require('./_guard');
+
 const UPSTREAM = 'https://api.llm7.io/v1/chat/completions';
 const ALLOWED_MODELS = new Set(['gemma3:27b', 'minimax-m2.7', 'codestral-latest']);
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'content-type');
     res.setHeader('Access-Control-Allow-Methods', 'POST');
     return res.status(204).end();
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  // Unauthenticated relay: cap per-IP use so it cannot be farmed for free inference.
+  if (blocked(req, res, { limit: 12, windowMs: 60_000 })) return;
   try {
     const body = typeof req.body === 'object' && req.body ? req.body : JSON.parse(req.body || '{}');
     const model = ALLOWED_MODELS.has(body.model) ? body.model : 'gemma3:27b';
@@ -24,7 +29,8 @@ module.exports = async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.setHeader('Vary', 'Origin');
     if (!upstream.ok) {
       const text = await upstream.text();
       return res.status(upstream.status).json({ error: `Upstream ${upstream.status}`, detail: text.slice(0, 300) });

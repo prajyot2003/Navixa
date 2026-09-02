@@ -1,4 +1,6 @@
 // Vercel serverless: same-origin proxy for allowlisted public JSON APIs (dodges CORS + bot walls)
+const { blocked } = require('./_guard');
+
 const ALLOWED_HOSTS = new Set([
   'remotive.com', 'www.remotive.com',
   'jobicy.com', 'www.jobicy.com',
@@ -8,7 +10,9 @@ const ALLOWED_HOSTS = new Set([
 ]);
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Vary', 'Origin');
+  if (blocked(req, res, { limit: 60, windowMs: 60_000 })) return;
   try {
     const url = new URL(String(req.query.url || ''));
     if (url.protocol !== 'https:' || !ALLOWED_HOSTS.has(url.hostname)) {

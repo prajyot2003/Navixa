@@ -1,6 +1,6 @@
 // Navixa — Learn (playlist finder: videos + articles + courses) and Streaks
 import { getState, update } from './store.js';
-import { $, $$, el, esc, icon, timeAgo, fmtNum, skeleton, emptyState, toast } from './utils.js';
+import { $, $$, el, esc, icon, timeAgo, fmtNum, skeleton, emptyState, toast, safeUrl, safeImageUrl} from './utils.js';
 import { searchVideos, searchArticles, curatedCourses, llmChat, systemPrompt } from './api.js';
 import { logActivity, checkAchievements, computeStreak, streakAliveToday, heatmapData, achievementList, goalsToday, levelProgress } from './gamify.js';
 import { md } from './chat.js';
@@ -31,15 +31,15 @@ function toggleDoneItem(item) {
 function mediaCard(item) {
   const saved = isSavedItem(item.id), done = isDoneItem(item.id);
   const thumb = item.kind === 'video'
-    ? `<a class="media-thumb" href="${esc(item.url)}" target="_blank" rel="noopener">
-        <img src="${esc(item.thumb || `https://i.ytimg.com/vi/${esc(item.id.replace('yt-', ''))}/hqdefault.jpg`)}" alt="" loading="lazy">
+    ? `<a class="media-thumb" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener">
+        <img src="${esc(safeImageUrl(item.thumb || `https://i.ytimg.com/vi/${encodeURIComponent(item.id.replace('yt-', ''))}/hqdefault.jpg`))}" alt="" loading="lazy">
         ${item.duration ? `<span class="dur">${esc(item.duration)}</span>` : ''}
         <span class="play-ov">${icon('play', 44)}</span></a>`
-    : item.cover ? `<a class="media-thumb" href="${esc(item.url)}" target="_blank" rel="noopener"><img src="${esc(item.cover)}" alt="" loading="lazy"></a>` : '';
+    : item.cover ? `<a class="media-thumb" href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener"><img src="${esc(safeImageUrl(item.cover))}" alt="" loading="lazy"></a>` : '';
   const card = el(`<div class="card media-card">
     ${thumb}
     <div class="media-body">
-      <div class="media-title"><a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.title)}</a></div>
+      <div class="media-title"><a href="${esc(safeUrl(item.url))}" target="_blank" rel="noopener">${esc(item.title)}</a></div>
       <div class="media-sub">
         <span>${esc(item.by || '')}</span>
         ${item.kind === 'video' && item.views ? `<span>${fmtNum(item.views)} views</span>` : ''}

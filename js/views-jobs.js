@@ -1,6 +1,6 @@
 // Navixa — Jobs search, AI suggestions (matches), application tracker
 import { getState, update } from './store.js';
-import { $, $$, el, esc, icon, timeAgo, skeleton, emptyState, toast, modal, uid } from './utils.js';
+import { $, $$, el, esc, icon, timeAgo, skeleton, emptyState, toast, modal, uid, safeUrl, safeImageUrl} from './utils.js';
 import { searchJobs, filterJobs, matchJobs } from './api.js';
 import { JOB_SOURCES } from './config.js';
 import { logActivity, checkAchievements } from './gamify.js';
@@ -29,13 +29,14 @@ export function toggleSave(job) {
 
 export function jobCard(job, { match } = {}) {
   const saved = isSaved(job.id);
-  const logo = job.logo
-    ? `<img src="${esc(job.logo)}" alt="" loading="lazy" onerror="this.replaceWith(this.parentNode.dataset.f)">`
+  const logoSrc = safeImageUrl(job.logo);
+  const logo = logoSrc
+    ? `<img src="${esc(logoSrc)}" alt="" loading="lazy" data-logo>`
     : (job.company || '?').trim()[0]?.toUpperCase() || '?';
   const card = el(`<div class="card job-card">
-    <div class="job-logo" data-f="${esc((job.company || '?')[0] || '?')}">${typeof logo === 'string' && logo.startsWith('<img') ? logo : esc(String(logo))}</div>
+    <div class="job-logo" data-f="${esc((job.company || '?')[0] || '?')}">${logoSrc ? logo : esc(String(logo))}</div>
     <div class="job-main">
-      <div class="job-title"><a href="${esc(job.url)}" target="_blank" rel="noopener">${esc(job.title)}</a></div>
+      <div class="job-title"><a href="${esc(safeUrl(job.url))}" target="_blank" rel="noopener">${esc(job.title)}</a></div>
       <div class="job-co">${esc(job.company)}${job.visa ? ' · <span class="badge ok">Visa sponsor</span>' : ''}</div>
       <div class="job-meta">
         <span>${icon('pin', 14)}${esc(job.location || '—')}</span>
@@ -53,10 +54,16 @@ export function jobCard(job, { match } = {}) {
       <div class="row">
         <button class="icon-btn" data-tailor title="Tailor your resume to this job">${icon('target', 17)}</button>
         <button class="icon-btn" data-save title="${saved ? 'Remove from tracker' : 'Save to tracker'}" style="${saved ? 'color:var(--accent-strong);border-color:var(--accent)' : ''}">${icon(saved ? 'check' : 'plus', 17)}</button>
-        <a class="btn btn-soft btn-sm" href="${esc(job.url)}" target="_blank" rel="noopener">Apply ${icon('external', 14)}</a>
+        <a class="btn btn-soft btn-sm" href="${esc(safeUrl(job.url))}" target="_blank" rel="noopener">Apply ${icon('external', 14)}</a>
       </div>
     </div>
   </div>`);
+  // Broken logo → fall back to the company initial. Done with a listener rather
+  // than an inline onerror= attribute, which a strict CSP blocks.
+  $('[data-logo]', card)?.addEventListener('error', (e) => {
+    const host = e.currentTarget.parentNode;
+    if (host) host.textContent = host.dataset.f || '?';
+  });
   $('[data-tailor]', card).onclick = () => {
     import('./tailor-ui.js').then(({ openTailor }) => openTailor(job));
   };
@@ -329,7 +336,7 @@ export function trackerView() {
             ${col === 'interview' ? `<button class="icon-btn plain" data-prep title="Interview prep for this role">${icon('mic', 15)}</button>` : ''}
             ${col === 'interview' ? `<button class="icon-btn plain" data-schedule title="Set interview date + calendar file">${icon('calendar', 15)}</button>` : ''}
             ${col === 'applied' || col === 'interview' ? `<button class="icon-btn plain" data-follow title="Draft a follow-up">${icon('mail', 15)}</button>` : ''}
-            ${job.url ? `<a class="icon-btn plain" href="${esc(job.url)}" target="_blank" rel="noopener" title="Open listing">${icon('external', 15)}</a>` : ''}
+            ${job.url ? `<a class="icon-btn plain" href="${esc(safeUrl(job.url))}" target="_blank" rel="noopener" title="Open listing">${icon('external', 15)}</a>` : ''}
             <button class="icon-btn plain" data-remove title="Remove">${icon('trash', 15)}</button>
           </div>
           <select class="select" data-move style="padding:3px 26px 3px 8px;font-size:12px;min-width:0">

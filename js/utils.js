@@ -40,11 +40,51 @@ export function fmtNum(n) {
 }
 
 export function stripHtml(html, max = 0) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = String(html || '');
-  let text = (tmp.textContent || '').replace(/\s+/g, ' ').trim();
+  // SECURITY: parse with DOMParser, never `div.innerHTML`. A detached div still
+  // fetches resources, so `<img src=x onerror=…>` in a third-party job listing
+  // would execute. A DOMParser document is inert: no scripts, no resource loads.
+  let text = '';
+  try {
+    const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    text = (doc.body?.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch {
+    text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
   if (max && text.length > max) text = text.slice(0, max).replace(/\s\S*$/, '') + '…';
   return text;
+}
+
+// SECURITY: esc() makes text safe inside HTML, but it does NOT make a URL safe
+// to put in href/src — `javascript:alert(1)` contains no escapable character and
+// would execute on click. Every URL that comes from a third party (job boards,
+// video scrapes, published profiles, avatars) must go through safeUrl().
+const SAFE_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+export function safeUrl(raw, fallback = '#') {
+  const s = String(raw ?? '').trim();
+  if (!s) return fallback;
+  // Control characters are used to smuggle schemes past naive filters
+  // (e.g. "java\tscript:") — reject outright rather than normalising.
+  if (/[\u0000-\u001F\u007F]/.test(s)) return fallback;
+  try {
+    const u = new URL(s, typeof location !== 'undefined' ? location.origin : 'https://x.invalid');
+    return SAFE_SCHEMES.has(u.protocol) ? u.href : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Stricter variant for <img src>: only real http(s) images, never data:/blob:. */
+export function safeImageUrl(raw, fallback = '') {
+  const s = String(raw ?? '').trim();
+  if (!s) return fallback;
+  if (/[\u0000-\u001F\u007F]/.test(s)) return fallback;
+  try {
+    const u = new URL(s, typeof location !== 'undefined' ? location.origin : 'https://x.invalid');
+    return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function initials(name) {
@@ -163,7 +203,7 @@ export function icon(name, size = 20) {
 }
 
 export function avatarHtml(user, size = 36) {
-  if (user?.picture) return `<img class="avatar" width="${size}" height="${size}" src="${esc(user.picture)}" alt="" referrerpolicy="no-referrer">`;
+  if (user?.picture) return `<img class="avatar" width="${size}" height="${size}" src="${esc(safeImageUrl(user.picture))}" alt="" referrerpolicy="no-referrer">`;
   return `<span class="avatar avatar-fallback" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.38)}px">${esc(initials(user?.name))}</span>`;
 }
 
