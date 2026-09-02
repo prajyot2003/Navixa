@@ -35,7 +35,7 @@ user data. That shapes everything below:
 | 2 | `stripHtml()` assigned untrusted job HTML to `div.innerHTML`. Scripts don't run that way, but a detached node still loads images, so `<img src=x onerror=…>` executed. | **High** | Rewritten on `DOMParser`, which produces an inert document: no script execution, no resource loads. |
 | 3 | No `Content-Security-Policy`; page could be framed (clickjacking); no HSTS. | **Medium** | Full CSP with no `unsafe-inline`/`unsafe-eval` for scripts, plus `frame-ancestors 'none'`, HSTS, `X-Frame-Options`, `Permissions-Policy`, COOP. |
 | 4 | `/api/llm` was an open, unauthenticated AI relay — anyone could farm free inference against the project's quota. Same for `/api/proxy` and `/api/videos`. | **Medium** | Added `api/_guard.js`: same-origin check + per-IP rate limits (12/min LLM, 30/min videos, 60/min proxy). Wildcard CORS replaced with origin reflection + `Vary`. |
-| 5 | Supabase loaded from a floating `@2` CDN tag — the CDN could serve new code into the page at any time. | **Medium** | Pinned to an exact version (`2.112.4`) with `crossorigin`. |
+| 5 | Supabase loaded from a floating `@2` CDN tag — the CDN could serve new code into the page at any time. | **Medium** | Pinned to an exact version (`2.112.4`) and integrity-checked with SHA-384 SRI, so the browser refuses the file if a single byte differs. |
 | 6 | Inline `onerror=` handler on job logos would break under a strict CSP. | Low | Replaced with an `addEventListener` fallback. |
 
 ---
@@ -68,14 +68,16 @@ Being straight about this matters more than a green checklist.
    serverless instances scale out and recycle, so a distributed attacker can
    exceed the nominal rate. It stops opportunistic abuse, not a funded one.
    A durable fix needs shared state (Vercel KV / Upstash Redis).
-2. **No Subresource Integrity on the CDN script yet.** The version is pinned,
-   which removes the "tag silently moves" risk, but not a CDN compromise.
-   To close it, generate the hash and add `integrity="sha384-…"`:
+2. **Upgrading Supabase is now a two-step change.** The CDN script is pinned and
+   SRI-protected, so bumping the version *without* regenerating the hash will
+   make the browser refuse the script and break sign-in. Always do both:
    ```bash
-   curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.min.js \
+   curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@<VERSION>/dist/umd/supabase.min.js \
      | openssl dgst -sha384 -binary | openssl base64 -A
    ```
-   Note: SRI must be regenerated whenever the pinned version changes.
+   Then update `src` and `integrity` together in `index.html`.
+   `tests/security.mjs` fails if any remote script lacks a valid hash or
+   `crossorigin` (SRI is silently ignored without the latter).
 3. **`app_config` is world-readable** (`using (true)`) by design, so the app can
    read config while signed out. Never put anything sensitive in that table.
 4. **Profile view counts can be inflated** — `bump_profile_views` is callable

@@ -25,12 +25,14 @@
     </div>
   </div>
   <noscript><p style="padding:2rem;text-align:center;font-family:system-ui">Navixa needs JavaScript enabled.</p></noscript>
-  <!-- Pinned to an exact version: a floating "@2" tag means the CDN can serve new
-       code into this page at any time. To also add tamper-proofing, generate the
-       hash and paste it in as integrity="sha384-…" (see SECURITY.md):
-         curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.min.js \
+  <!-- Pinned + integrity-checked. The version is exact (a floating "@2" tag lets the
+       CDN serve new code into this page at any time) and the hash means the browser
+       refuses the file outright if a single byte differs from what was audited.
+       IMPORTANT: regenerate the hash whenever the version changes, or sign-in breaks:
+         curl -s https://cdn.jsdelivr.net/npm/@supabase/supabase-js@<VER>/dist/umd/supabase.min.js \
            | openssl dgst -sha384 -binary | openssl base64 -A -->
   <script defer crossorigin="anonymous"
+          integrity="sha384-yiVMs0R/Jyz7OhoXa/DsEMUSBLjEhr/QJta2ONO+zB6I8/GmNg/7AUFrZmAJV7KV"
           src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
