@@ -515,6 +515,7 @@ export function settingsView() {
       actions: [{ label: 'Cancel' }, { label: 'Delete everything', danger: true, onClick: () => { deleteAccountData(u.sub); location.hash = '#/login'; location.reload(); } }],
     });
   };
+  import('./leaderboard.js').then(({ handleCard }) => root.appendChild(handleCard()));
   return root;
 }
 

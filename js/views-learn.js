@@ -258,5 +258,6 @@ export function streaksView() {
         </div>`).join('')}
       </div>
     </div>`;
+  import('./leaderboard.js').then(({ leaderboardCard }) => root.appendChild(leaderboardCard()));
   return root;
 }

@@ -579,6 +579,22 @@ textarea.input { resize: vertical; min-height: 74px; }
 .typing i:nth-child(2) { animation-delay: .18s; } .typing i:nth-child(3) { animation-delay: .36s; }
 .chat-input-bar { border-top: 1px solid var(--border); padding: 13px 15px; display: flex; gap: 10px; align-items: flex-end; }
 .chat-input-bar textarea { flex: 1; max-height: 130px; min-height: 46px; border-radius: 20px; }
+/* --- leaderboard --- */
+.lb-you { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 13px; margin-bottom: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; font-size: 13.6px; }
+.lb-list { list-style: none; margin: 0; padding: 0; }
+.lb-row { display: grid; grid-template-columns: 34px 1fr auto auto; align-items: center; gap: 10px;
+  padding: 9px 6px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.lb-row:last-child { border-bottom: 0; }
+.lb-row.is-me { background: var(--surface-2); border-radius: 10px; }
+.lb-rank { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-3);
+  text-align: right; font-size: 13px; }
+.lb-rank.top { color: var(--accent-strong); font-weight: 700; }
+.lb-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-meta { font-size: 12.4px; color: var(--text-3); white-space: nowrap; }
+.lb-xp { font-family: var(--font-display); font-size: 15px; font-variant-numeric: tabular-nums; min-width: 58px; text-align: right; }
+@media (max-width: 560px) { .lb-meta { display: none; } }
+
 /* --- public profile page --- */
 .pub-wrap { max-width: 780px; margin: 0 auto; padding: 40px 20px 70px; }
 .pub-card { background: var(--surface); border: 1px solid var(--border); border-radius: 22px; padding: 38px 40px; box-shadow: var(--card-shadow); }

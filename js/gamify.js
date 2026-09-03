@@ -42,14 +42,36 @@ export function logActivity(kind, meta = {}) {
       g.shieldEarnedAtStreak = streak;
     }
   }, { type: 'gamify', kind });
-  const s2 = getState();
-  const newLevel = levelFromXp(s2.gamify.xp);
-  if (newLevel > prevLevel) {
+  // The local increment above keeps the UI instant and is the whole story in
+  // local mode. When signed in, the SERVER decides what was actually earned —
+  // it caps abuse and is the number the leaderboard ranks — so overwrite the
+  // optimistic figure with its answer. See supabase-leaderboard.sql.
+  import('./leaderboard.js')
+    .then(({ awardXp }) => awardXp(kind))
+    .then((res) => {
+      if (!res) return;                       // local mode, offline, or not migrated
+      update((st) => {
+        st.gamify.xp = res.xp;
+        st.gamify.serverLevel = res.level;
+        st.gamify.serverStreak = res.streak;
+      }, { type: 'gamify', kind: 'sync' });
+      announceLevel(prevLevel);
+    })
+    .catch(() => { /* stay with the local figure */ });
+
+  announceLevel(prevLevel);
+  checkAchievements();
+}
+
+function announceLevel(prevLevel) {
+  const newLevel = levelFromXp(getState()?.gamify.xp || 0);
+  if (newLevel > prevLevel && !announced.has(newLevel)) {
+    announced.add(newLevel);
     toast(`Level up! You reached level ${newLevel}`, 'xp', 4200);
     confetti();
   }
-  checkAchievements();
 }
+const announced = new Set();
 
 export function markVisited(view) {
   const s = getState(); if (!s) return;

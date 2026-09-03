@@ -74,7 +74,12 @@ export async function loadProfile() {
 
 export async function touchProfile(statPatch = {}) {
   const c = client(); if (!c || !session) return;
-  const patch = { last_seen: new Date().toISOString(), ...statPatch };
+  // xp/level/streak are DERIVED server-side from the xp_events ledger (see
+  // supabase-leaderboard.sql) and are rejected by the profiles guard trigger.
+  // Sending them would be silently reverted, so strip them here and keep the
+  // request honest about what it actually changes.
+  const { xp, level, streak, ...safe } = statPatch || {};
+  const patch = { last_seen: new Date().toISOString(), ...safe };
   await c.from('profiles').update(patch).eq('id', session.user.id);
 }
 

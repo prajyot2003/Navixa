@@ -5,10 +5,42 @@ How Navixa is hardened, what was fixed, and — honestly — what risk remains.
 Run the security regression suite any time:
 
 ```bash
-node tests/security.mjs    # 62 checks
-node tests/ratelimit.mjs   # 19 checks (both backends + failure modes)
-node tests/run.mjs         # 33 functional tests
+node tests/security.mjs     # 62 checks
+node tests/ratelimit.mjs    # 19 checks (both backends + failure modes)
+node tests/leaderboard.mjs  # 43 checks (XP integrity + leaderboard privacy)
+node tests/run.mjs          # 33 functional tests
 ```
+
+## XP integrity and the leaderboard
+
+`xp`, `level` and `streak` used to be plain columns the browser wrote. With no
+leaderboard that was only a cosmetic self-own; the moment scores are ranked
+publicly it becomes a real integrity problem, so the model changed:
+
+- **The client cannot write XP at all.** The profiles guard trigger silently
+  reverts `xp`, `level` and `streak` to their previous values for non-admins.
+- **`award_xp(action)` is the only way to earn.** It is `SECURITY DEFINER`, looks
+  the point value up server-side from the action name (points are never a
+  parameter), rejects unknown actions, and appends to `xp_events`.
+- **`xp_events` is an append-only ledger.** It has a SELECT-own policy and
+  deliberately *no* INSERT/UPDATE/DELETE policy, so the function is the only door.
+- **`profiles.xp` is derived** — recomputed as `sum(points)` on every award.
+- **Caps:** per-action daily limits plus a 300 XP/day global ceiling. Hitting a
+  cap earns nothing and is not an error, so honest heavy users see no failure.
+- **Migration reconciles history.** Pre-existing XP was client-asserted with no
+  ledger behind it, so it is reset to the ledger's truth rather than grandfathered.
+
+**Leaderboard privacy — opt-in, pseudonymous.**
+
+- Off by default: `leaderboard_opt_in` defaults to `false`, and a user must also
+  choose a handle to appear at all.
+- The `leaderboard()` function returns only `rank, handle, xp, level, streak` and
+  an `is_me` boolean. Real name, email, avatar and user id are never returned —
+  asserted by `tests/leaderboard.mjs`.
+- Handles are validated (`^[a-z][a-z0-9_]{2,19}$`), unique case-insensitively,
+  and reserved words like `admin` and `navixa` are blocked.
+
+Set up with `supabase-leaderboard.sql`; verify with `node tests/leaderboard.mjs`.
 
 ## Rate limiting
 
@@ -109,13 +141,14 @@ Being straight about this matters more than a green checklist.
    `crossorigin` (SRI is silently ignored without the latter).
 3. **`app_config` is world-readable** (`using (true)`) by design, so the app can
    read config while signed out. Never put anything sensitive in that table.
-4. **Gamification numbers are client-trusted.** `xp`, `level`, `streak` and
-   `stats` are computed in the browser and pushed up, so a signed-in user can
-   inflate their own. There is no leaderboard and nothing is awarded for them,
-   so this is a cosmetic self-own. Making it tamper-proof needs server-side
-   progress tracking, which this architecture deliberately does not have.
-   Identity columns (`id`, `email`, `role`, `created_at`) *are* locked — see
-   `supabase-harden-profiles.sql`.
+4. **XP cheating is bounded, not eliminated.** Scores are now server-computed
+   (see the section below), so a user cannot assert a number. They *can* still
+   call `award_xp` for actions they didn't really perform, up to the daily caps —
+   about 300 XP/day. Closing that completely would need server-side verification
+   of every action, which a browser-only app cannot do. The caps are set low
+   enough that grinding the leaderboard is slower than simply using the app.
+   `stats` (saved/applied counts) stays client-written; it is descriptive, not
+   ranked.
 4. **Profile view counts can be inflated** — `bump_profile_views` is callable
    repeatedly. Cosmetic only.
 5. **Prompt injection is not solved.** A malicious job description or uploaded
