@@ -1,0 +1,229 @@
+// Executes the Supabase migrations against a real Postgres (PGlite = Postgres
+// compiled to WASM), so SQL is verified rather than assumed. This catches the
+// class of bug that only appears at runtime: type-resolution errors, triggers
+// that revert their own migration, RLS that blocks the wrong thing.
+//
+//   npm install @electric-sql/pglite      (then)  node tests/sql.mjs
+//
+// Supabase-only pieces (auth schema, auth.uid(), RLS impersonation) are stubbed
+// below to match Supabase's behaviour.
+import { PGlite } from '@electric-sql/pglite';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+
+let pass = 0, fail = 0;
+const t = (n, c, d = '') => { if (c) { pass++; console.log(`  ✓ ${n}`); } else { fail++; console.log(`  ✗ ${n}${d ? `\n      ${d}` : ''}`); } };
+
+const db = new PGlite();
+const q = (sql, params) => db.query(sql, params);
+const exec = (sql) => db.exec(sql);
+
+/* ---------- Supabase scaffolding ---------- */
+await exec(`
+  -- Supabase ships these roles; vanilla Postgres does not, and the migration
+  -- GRANTs to them.
+  do $$ begin
+    if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
+    if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
+    if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
+  end $$;
+  create schema if not exists auth;
+  create table auth.users (
+    id uuid primary key default gen_random_uuid(),
+    email text unique,
+    raw_user_meta_data jsonb default '{}'::jsonb
+  );
+  -- Supabase derives auth.uid() from the request JWT. Mirror that with a GUC so
+  -- tests can "become" a user. Unset => null, exactly like the SQL editor.
+  create or replace function auth.uid() returns uuid language sql stable as $$
+    select nullif(current_setting('test.uid', true), '')::uuid
+  $$;
+`);
+
+// Supabase's API connects as `authenticated`, which does NOT own the tables — so
+// RLS applies to it. The owner (postgres) is exempt from RLS unless FORCE is set,
+// which is exactly why SECURITY DEFINER functions can bypass the policies. Run
+// user-facing assertions as `authenticated` or RLS silently never engages.
+const asUser = async (uid) => {
+  await exec('reset role');
+  await exec(`select set_config('test.uid', ${uid ? `'${uid}'` : "''"}, false)`);
+  await exec('set role authenticated');
+};
+const asSystem = async () => { await exec('reset role'); };
+const become = asUser;
+
+/* ---------- the parts of supabase-setup.sql this migration depends on ---------- */
+await exec(`
+  create table public.profiles (
+    id uuid primary key references auth.users(id) on delete cascade,
+    email text unique,
+    name text,
+    avatar_url text,
+    role text not null default 'client' check (role in ('client','admin')),
+    xp int not null default 0,
+    level int not null default 1,
+    streak int not null default 0,
+    stats jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    last_seen timestamptz not null default now()
+  );
+  create or replace function public.is_admin() returns boolean
+    language sql stable security definer set search_path = public as $$
+      select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+    $$;
+  alter table public.profiles enable row level security;
+  create policy profiles_select on public.profiles for select
+    using (auth.uid() = id or public.is_admin());
+  create policy profiles_update_own on public.profiles for update
+    using (auth.uid() = id);
+  create policy profiles_update_admin on public.profiles for update
+    using (public.is_admin());
+`);
+
+// Two users, one with legacy inflated XP that the migration must reconcile.
+const cheat = (await q(`insert into auth.users (email) values ('cheat@x.com') returning id`)).rows[0].id;
+const honest = (await q(`insert into auth.users (email) values ('honest@x.com') returning id`)).rows[0].id;
+await exec(`
+  insert into public.profiles (id, email, xp, level, streak) values
+    ('${cheat}',  'cheat@x.com',  999999, 99, 42),
+    ('${honest}', 'honest@x.com', 0, 1, 0);
+`);
+
+/* ---------- run the real migration ---------- */
+console.log('\n[1] the migration executes against real Postgres');
+let migrationError = null;
+try {
+  await exec(read('supabase-leaderboard.sql'));
+} catch (e) {
+  migrationError = e.message;
+}
+t('supabase-leaderboard.sql runs with no errors', migrationError === null, migrationError || '');
+await exec(`
+  grant usage on schema public to authenticated, anon;
+  grant select, insert, update, delete on all tables in schema public to authenticated;
+  grant usage, select on all sequences in schema public to authenticated;
+`);
+if (migrationError) {
+  console.log(`\n❌ sql: ${pass} passed, ${fail} failed`);
+  process.exit(1);
+}
+
+/* ---------- reconciliation ---------- */
+console.log('\n[2] legacy asserted XP is actually reset (not silently reverted)');
+const after = (await q(`select xp, level, streak from public.profiles where id = $1`, [cheat])).rows[0];
+t('inflated xp 999999 → 0', after.xp === 0, `got xp=${after.xp}`);
+t('inflated level 99 → 1', after.level === 1, `got level=${after.level}`);
+t('inflated streak 42 → 0', after.streak === 0, `got streak=${after.streak}`);
+
+/* ---------- the cheat is blocked ---------- */
+console.log('\n[3] a signed-in user cannot assert their own score');
+await become(cheat);
+await q(`update public.profiles set xp = 999999, level = 99 where id = $1`, [cheat]);
+const cheated = (await q(`select xp, level from public.profiles where id = $1`, [cheat])).rows[0];
+t('direct UPDATE of xp is reverted by the trigger', cheated.xp === 0, `got xp=${cheated.xp}`);
+t('direct UPDATE of level is reverted', cheated.level === 1, `got level=${cheated.level}`);
+
+let identityErr = null;
+try { await q(`update public.profiles set email = 'attacker@x.com' where id = $1`, [cheat]); }
+catch (e) { identityErr = e.message; }
+t('email rewrite still raises', /cannot be changed|sign-in provider/i.test(identityErr || ''), identityErr || 'no error raised');
+
+let roleErr = null;
+try { await q(`update public.profiles set role = 'admin' where id = $1`, [cheat]); }
+catch (e) { roleErr = e.message; }
+t('role escalation still raises', /Only admins/i.test(roleErr || ''), roleErr || 'no error raised');
+
+/* ---------- earning XP ---------- */
+console.log('\n[4] award_xp is the only way in, and it caps');
+const a1 = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
+t('award_xp returns the new totals', a1.xp === 20 && a1.awarded === 20, JSON.stringify(a1));
+t('level is derived from the ledger', a1.level === 1);
+t('streak counts today', a1.streak === 1, `got ${a1.streak}`);
+
+let unknownErr = null;
+try { await q(`select * from public.award_xp('give_me_a_million')`); }
+catch (e) { unknownErr = e.message; }
+t('unknown actions are rejected', /Unknown action/.test(unknownErr || ''), unknownErr || 'no error');
+
+// job_apply is 20 points, capped at 10/day = 200 max from this action.
+for (let i = 0; i < 12; i++) await q(`select * from public.award_xp('job_apply')`);
+const capped = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
+t('per-action daily cap holds', capped.xp <= 200, `xp=${capped.xp}`);
+t('hitting the cap awards nothing and is not an error', capped.capped === true && capped.awarded === 0);
+
+// Global ceiling: pile on other actions and confirm 300/day is never exceeded.
+for (const act of ['job_search', 'chat_message', 'resume_edit', 'tracker_move', 'learn_save', 'ats_run']) {
+  for (let i = 0; i < 25; i++) await q(`select * from public.award_xp('${act}')`);
+}
+const ceiling = (await q(`select xp from public.profiles where id = $1`, [cheat])).rows[0];
+t('global 300/day ceiling is never exceeded', ceiling.xp <= 300, `xp=${ceiling.xp}`);
+
+const ledgerSum = (await q(`select coalesce(sum(points),0)::int s from public.xp_events where user_id = $1`, [cheat])).rows[0].s;
+t('profiles.xp always equals the ledger sum', ceiling.xp === ledgerSum, `xp=${ceiling.xp} ledger=${ledgerSum}`);
+
+console.log('\n[5] the ledger is append-only for users');
+let insErr = null;
+try { await q(`insert into public.xp_events (user_id, action, points) values ($1,'hack',100)`, [cheat]); }
+catch (e) { insErr = e.message; }
+t('direct INSERT into xp_events is blocked by RLS', insErr !== null, insErr || 'INSERT SUCCEEDED — no policy blocked it');
+
+let delErr = null;
+try { await q(`delete from public.xp_events where user_id = $1`, [cheat]); }
+catch (e) { delErr = e.message; }
+const stillThere = (await q(`select count(*)::int c from public.xp_events where user_id = $1`, [cheat])).rows[0].c;
+t('users cannot delete their ledger history', stillThere > 0, `rows left: ${stillThere}`);
+
+/* ---------- leaderboard privacy ---------- */
+console.log('\n[6] leaderboard privacy');
+const noHandle = (await q(`select * from public.leaderboard(25)`)).rows;
+t('not listed without a handle + opt-in', noHandle.length === 0, `got ${noHandle.length} rows`);
+
+await q(`select * from public.set_handle('quiet_otter', true)`);
+const listed = (await q(`select * from public.leaderboard(25)`)).rows;
+t('appears after opting in', listed.length === 1 && listed[0].handle === 'quiet_otter', JSON.stringify(listed));
+t('returns only safe columns',
+  JSON.stringify(Object.keys(listed[0]).sort()) === JSON.stringify(['handle', 'is_me', 'level', 'rank', 'streak', 'xp']),
+  Object.keys(listed[0]).join(','));
+t('no email/name/id in the payload', !JSON.stringify(listed[0]).includes('@') && !JSON.stringify(listed[0]).includes(cheat));
+
+let badHandle = null;
+try { await q(`select * from public.set_handle('Has Caps', true)`); } catch (e) { badHandle = e.message; }
+t('invalid handle rejected', /Username must be/.test(badHandle || ''), badHandle || 'no error');
+
+let reserved = null;
+try { await q(`select * from public.set_handle('admin', true)`); } catch (e) { reserved = e.message; }
+t('reserved handle rejected', /reserved/.test(reserved || ''), reserved || 'no error');
+
+await become(honest);
+let taken = null;
+try { await q(`select * from public.set_handle('quiet_otter', true)`); } catch (e) { taken = e.message; }
+t('duplicate handle rejected', /taken/.test(taken || ''), taken || 'no error');
+
+await become(cheat);
+await q(`select * from public.set_handle('quiet_otter', false)`);
+const optedOut = (await q(`select * from public.leaderboard(25)`)).rows;
+t('opting out removes you from the board', optedOut.length === 0, `got ${optedOut.length} rows`);
+
+/* ---------- level curve parity with the JS ---------- */
+console.log('\n[7] SQL level curve matches js/gamify.js');
+const { levelFromXp } = await import('../js/gamify.js');
+let bad = null;
+for (const xp of [0, 1, 99, 100, 101, 299, 300, 301, 599, 600, 1000, 5000, 12345]) {
+  const sqlLvl = (await q(`select public.xp_level($1) l`, [xp])).rows[0].l;
+  if (sqlLvl !== levelFromXp(xp)) { bad = `xp=${xp}: sql=${sqlLvl} js=${levelFromXp(xp)}`; break; }
+}
+t('xp_level() and levelFromXp() agree', bad === null, bad || '');
+
+await asSystem();
+console.log('\n[8] the migration is safe to re-run');
+let rerun = null;
+try { await exec(read('supabase-leaderboard.sql')); } catch (e) { rerun = e.message; }
+t('running it a second time is idempotent', rerun === null, rerun || '');
+
+await db.close();
+console.log(`\n${fail === 0 ? '✅' : '❌'} sql: ${pass} passed, ${fail} failed`);
+process.exit(fail === 0 ? 0 : 1);

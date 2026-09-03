@@ -174,8 +174,11 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- handle + opt-in
+-- NOTE the out_ prefixes. Naming an OUT column `handle` would collide with
+-- profiles.handle inside the function body — plpgsql resolves the bare name to
+-- the OUT parameter and raises "column reference handle is ambiguous".
 create or replace function public.set_handle(p_handle text, p_opt_in boolean default null)
-returns table (handle text, leaderboard_opt_in boolean)
+returns table (out_handle text, out_opt_in boolean)
 language plpgsql security definer set search_path = public as $$
 declare
   uid uuid := auth.uid();
@@ -250,7 +253,13 @@ grant execute on function public.my_leaderboard_rank()             to authentica
 create or replace function public.guard_profile_columns()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if public.is_admin() then
+  -- Trusted server-side context (SQL editor, migrations, service role): auth.uid()
+  -- is null only when there is no end-user JWT. This is NOT a hole — an anonymous
+  -- PostgREST request also has a null uid, but the profiles_update_own policy
+  -- (auth.uid() = id) matches zero rows for it, so RLS stops it before this runs.
+  -- Without this, the reconciliation UPDATE at the bottom of this file would be
+  -- silently reverted by this very trigger, and admins could never correct a score.
+  if auth.uid() is null or public.is_admin() then
     return new;
   end if;
 
@@ -267,10 +276,16 @@ begin
     raise exception 'profiles.created_at cannot be changed';
   end if;
 
-  -- Scores are derived from xp_events. Ignore whatever the client sent.
-  new.xp     := old.xp;
-  new.level  := old.level;
-  new.streak := old.streak;
+  -- Scores are DERIVED. Rather than reverting to the old value, recompute the
+  -- truth from the ledger and write that. Two reasons this is better than a
+  -- revert: a cheating client's number is replaced by the real one instead of
+  -- being frozen, and award_xp's own UPDATE still lands (it is SECURITY DEFINER,
+  -- but auth.uid() is still the end user inside it, so a plain revert would have
+  -- silently undone every award — XP would never have moved).
+  new.xp     := (select coalesce(sum(e.points), 0)::int
+                   from public.xp_events e where e.user_id = new.id);
+  new.level  := public.xp_level(new.xp);
+  new.streak := public.xp_streak(new.id);
 
   return new;
 end $$;
@@ -283,7 +298,19 @@ create trigger profiles_guard_columns
 
 -- One-time reconciliation: existing xp columns were client-asserted and cannot
 -- be trusted, and there is no ledger behind them. Reset to the ledger's truth.
+-- (Runs through the trigger above, which is why that trigger must let a null
+--  auth.uid() through — otherwise this statement would revert itself.)
+-- NOTE the ::int cast. sum() over an int column returns BIGINT, and Postgres
+-- will not implicitly narrow that to match xp_level(int) — function resolution
+-- only considers implicit casts, and bigint→int is an assignment cast. Without
+-- the cast this fails with "function public.xp_level(bigint) does not exist".
 update public.profiles p
-   set xp = coalesce((select sum(e.points) from public.xp_events e where e.user_id = p.id), 0),
-       level = public.xp_level(coalesce((select sum(e.points) from public.xp_events e where e.user_id = p.id), 0)),
-       streak = public.xp_streak(p.id);
+   set xp     = t.total,
+       level  = public.xp_level(t.total),
+       streak = public.xp_streak(p.id)
+  from (
+    select pr.id,
+           coalesce((select sum(e.points) from public.xp_events e where e.user_id = pr.id), 0)::int as total
+      from public.profiles pr
+  ) t
+ where t.id = p.id;

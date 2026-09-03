@@ -51,7 +51,11 @@ export async function setHandle(handle, optIn) {
   if (!c || !cloudSession()) throw new Error('Sign in with Google first.');
   const { data, error } = await c.rpc('set_handle', { p_handle: handle, p_opt_in: optIn });
   if (error) throw new Error(isMissing(error) ? SETUP : error.message);
-  return Array.isArray(data) ? data[0] : data;
+  const row = Array.isArray(data) ? data[0] : data;
+  // set_handle's OUT columns are out_handle/out_opt_in (renamed to dodge a
+  // plpgsql name collision with profiles.handle). Accept both shapes.
+  return row ? { handle: row.out_handle ?? row.handle,
+                 leaderboard_opt_in: row.out_opt_in ?? row.leaderboard_opt_in } : null;
 }
 
 /* ---------------- UI ---------------- */

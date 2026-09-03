@@ -52,10 +52,27 @@ t('per-action daily cap enforced', /used >= cap/.test(sql));
 t('global daily ceiling enforced', /DAILY_MAX/.test(sql) && /day_total \+ pts > DAILY_MAX/.test(sql));
 t('profiles.xp is recomputed from the ledger sum',
   /set xp = new_xp/.test(sql) && /sum\(points\)[\s\S]*?into new_xp/.test(sql));
-t('guard trigger reverts client-sent scores',
-  /new\.xp\s*:=\s*old\.xp/.test(sql) && /new\.level\s*:=\s*old\.level/.test(sql) && /new\.streak\s*:=\s*old\.streak/.test(sql));
+// The trigger recomputes from the ledger rather than reverting to the old value:
+// a revert would also have undone award_xp's own UPDATE (auth.uid() is still the
+// end user inside a SECURITY DEFINER function), so XP would never have moved.
+t('guard trigger recomputes scores from the ledger, not from the client',
+  /new\.xp\s*:=\s*\(select coalesce\(sum\(e\.points\), 0\)::int/.test(sql)
+  && /new\.level\s*:=\s*public\.xp_level\(new\.xp\)/.test(sql)
+  && /new\.streak\s*:=\s*public\.xp_streak\(new\.id\)/.test(sql));
 t('legacy asserted XP is reconciled to the ledger on migration',
-  /update public\.profiles p[\s\S]*?set xp = coalesce\(\(select sum\(e\.points\)/.test(sql));
+  /update public\.profiles p[\s\S]*?set xp\s*= t\.total/.test(sql));
+// sum() over an int column is BIGINT; xp_level(int) needs an explicit narrow or
+// Postgres raises "function public.xp_level(bigint) does not exist".
+t('the ledger sum is cast to int before xp_level()', /\), 0\)::int as total/.test(sql));
+t('set_handle OUT columns are prefixed to avoid a plpgsql name collision',
+  /returns table \(out_handle text, out_opt_in boolean\)/.test(sql));
+// The guard trigger fires on the reconciliation UPDATE too. In the SQL editor
+// auth.uid() is null, so without this bypass the migration silently reverts
+// itself and old inflated scores survive — a failure with no error message.
+t('trigger lets trusted server-side context (null auth.uid) through',
+  /if auth\.uid\(\) is null or public\.is_admin\(\) then/.test(sql));
+t('the bypass is justified in a comment, not silent',
+  /RLS stops it before this runs/.test(sql));
 
 /* ---------- 3. privacy of the leaderboard ---------- */
 console.log('\n[3] leaderboard exposes a handle and nothing else');
