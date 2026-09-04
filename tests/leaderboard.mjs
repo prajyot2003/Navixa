@@ -70,7 +70,14 @@ t('set_handle OUT columns are prefixed to avoid a plpgsql name collision',
 // auth.uid() is null, so without this bypass the migration silently reverts
 // itself and old inflated scores survive — a failure with no error message.
 t('trigger lets trusted server-side context (null auth.uid) through',
-  /if auth\.uid\(\) is null or public\.is_admin\(\) then/.test(sql));
+  /if auth\.uid\(\) is null then\s*\n\s*return new;/.test(sql));
+// Admins were once exempt from the WHOLE trigger, so their scores never
+// recomputed: the ledger filled up while profiles.xp stayed at 0. The admin
+// exemption must cover identity columns ONLY.
+t('the admin exemption is scoped to identity columns, not the whole trigger',
+  /if not public\.is_admin\(\) then/.test(sql));
+t('score derivation sits outside the admin exemption',
+  sql.indexOf('new.xp     := (select coalesce(sum(e.points)') > sql.indexOf('if not public.is_admin() then'));
 t('the bypass is justified in a comment, not silent',
   /RLS stops it before this runs/.test(sql));
 

@@ -7,8 +7,8 @@ Run the security regression suite any time:
 ```bash
 node tests/security.mjs     # 62 checks
 node tests/ratelimit.mjs    # 19 checks (both backends + failure modes)
-node tests/leaderboard.mjs  # 47 checks (XP integrity + leaderboard privacy)
-node tests/sql.mjs          # 37 checks — runs the migrations against a real
+node tests/leaderboard.mjs  # 49 checks (XP integrity + leaderboard privacy)
+node tests/sql.mjs          # 51 checks — runs the migrations against a real
                             #   Postgres (PGlite). Needs: npm i @electric-sql/pglite
 node tests/run.mjs          # 33 functional tests
 ```
@@ -19,7 +19,10 @@ node tests/run.mjs          # 33 functional tests
 leaderboard that was only a cosmetic self-own; the moment scores are ranked
 publicly it becomes a real integrity problem, so the model changed:
 
-- **The client cannot write XP at all.** On any non-admin update the guard trigger
+- **Scores are derived for everyone, admins included.** An earlier version
+  exempted admins from the whole trigger, so an admin's ledger could be full
+  while `profiles.xp` sat at 0. The admin exemption now covers identity columns
+  only. On any update the guard trigger
   *recomputes* `xp`, `level` and `streak` from the ledger and writes that, so a
   submitted number is replaced by the true one. (An earlier version reverted to
   the previous value instead — that also silently undid `award_xp`'s own update,

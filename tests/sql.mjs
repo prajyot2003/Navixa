@@ -272,8 +272,82 @@ await become(honest);
 const post = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
 t('normal earning continues on top of the backfill', post.xp === 117, `got ${post.xp}`);
 
+/* ---------- admins are not exempt from derivation ---------- */
+console.log('\n[9] an admin\'s score is derived too');
 await asSystem();
-console.log('\n[9] the migration is safe to re-run');
+const boss = (await q(`insert into auth.users (email) values ('boss@x.com') returning id`)).rows[0].id;
+await exec(`insert into public.profiles (id, email, role) values ('${boss}', 'boss@x.com', 'admin')`);
+await q(`insert into public.user_state (user_id, data) values ($1, $2)`, [boss, JSON.stringify({
+  gamify: { activity: { '2026-07-01': 4, '2026-07-02': 6 } },
+})]);
+await become(boss);
+const bossBf = (await q(`select * from public.backfill_xp()`)).rows[0];
+// The whole failure was: ledger written, profile column left at zero, because
+// the trigger returned early for admins.
+const bossLedger = (await q(`select coalesce(sum(points),0)::int s from public.xp_events where user_id = $1`, [boss])).rows[0].s;
+const bossProfile = (await q(`select xp, level, streak from public.profiles where id = $1`, [boss])).rows[0];
+t('admin backfill writes the ledger', bossLedger === 50, `ledger=${bossLedger}`);
+t('admin profile.xp matches the ledger (not left at 0)', bossProfile.xp === bossLedger,
+  `profile=${bossProfile.xp} ledger=${bossLedger}`);
+t('backfill reports the real total for an admin', bossBf.out_xp === 50, `got ${bossBf.out_xp}`);
+const bossEarn = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
+t('an admin earning XP updates their profile', bossEarn.xp === 70, `got ${bossEarn.xp}`);
+await q(`update public.profiles set xp = 999999 where id = $1`, [boss]);
+const bossCheat = (await q(`select xp from public.profiles where id = $1`, [boss])).rows[0];
+t('an admin cannot assert their own XP either', bossCheat.xp === 70, `got ${bossCheat.xp}`);
+await q(`update public.profiles set role = 'client' where id = $1`, [honest]);
+const demoted = (await q(`select role from public.profiles where id = $1`, [honest])).rows[0];
+t('admins can still manage other users\' roles', demoted.role === 'client', `got ${demoted.role}`);
+
+/* ---------- bulk repair: every user in one run ---------- */
+console.log('\n[10] supabase-fix-all-scores.sql repairs EVERY user in one pass');
+await asSystem();
+// Three users who have never signed in since the ledger existed.
+const bulk = [];
+for (const [email, activity] of [
+  ['a@x.com', { '2026-06-01': 2, '2026-06-02': 3 }],
+  ['b@x.com', { '2026-06-10': 12, '2026-06-11': 12 }],
+  ['c@x.com', {}],                                   // no history at all
+]) {
+  const id = (await q(`insert into auth.users (email) values ($1) returning id`, [email])).rows[0].id;
+  await exec(`insert into public.profiles (id, email) values ('${id}', '${email}')`);
+  await q(`insert into public.user_state (user_id, data) values ($1, $2)`,
+    [id, JSON.stringify({ gamify: { activity } })]);
+  bulk.push({ id, email });
+}
+const beforeBulk = (await q(`select coalesce(sum(xp),0)::int s from public.profiles where id = any($1)`,
+  [bulk.map((b) => b.id)])).rows[0].s;
+t('the untouched users start at 0', beforeBulk === 0, `got ${beforeBulk}`);
+
+await exec(read('supabase-fix-all-scores.sql'));
+
+const a = (await q(`select xp, streak from public.profiles where email = 'a@x.com'`)).rows[0];
+const b = (await q(`select xp from public.profiles where email = 'b@x.com'`)).rows[0];
+const cUser = (await q(`select xp from public.profiles where email = 'c@x.com'`)).rows[0];
+t('user with 5 actions restored to 25', a.xp === 25, `got ${a.xp}`);
+t('per-day clamp applied (12 actions max, not 99)', b.xp === 120, `got ${b.xp}`);
+t('user with no history stays at 0 without erroring', cUser.xp === 0, `got ${cUser.xp}`);
+
+// Everyone who was already correct must be untouched.
+const bossAfter = (await q(`select xp from public.profiles where email = 'boss@x.com'`)).rows[0];
+t('already-migrated users are not double-counted', bossAfter.xp === 70, `got ${bossAfter.xp}`);
+
+// Every profile must equal its ledger, with no exceptions.
+const drift = (await q(`
+  select count(*)::int n from public.profiles p
+   where p.xp is distinct from
+     (select coalesce(sum(e.points),0)::int from public.xp_events e where e.user_id = p.id)`)).rows[0].n;
+t('every profile now equals its ledger sum', drift === 0, `${drift} profiles disagree`);
+
+// Re-running must not inflate anyone.
+const totalBefore = (await q(`select coalesce(sum(xp),0)::int s from public.profiles`)).rows[0].s;
+await exec(read('supabase-fix-all-scores.sql'));
+const totalAfter = (await q(`select coalesce(sum(xp),0)::int s from public.profiles`)).rows[0].s;
+t('re-running the whole script changes nothing', totalBefore === totalAfter,
+  `${totalBefore} → ${totalAfter}`);
+
+await asSystem();
+console.log('\n[11] the migration is safe to re-run');
 let rerun = null;
 try { await exec(read('supabase-leaderboard.sql')); } catch (e) { rerun = e.message; }
 t('running it a second time is idempotent', rerun === null, rerun || '');

@@ -258,30 +258,37 @@ begin
   -- PostgREST request also has a null uid, but the profiles_update_own policy
   -- (auth.uid() = id) matches zero rows for it, so RLS stops it before this runs.
   -- Without this, the reconciliation UPDATE at the bottom of this file would be
-  -- silently reverted by this very trigger, and admins could never correct a score.
-  if auth.uid() is null or public.is_admin() then
+  -- silently reverted by this very trigger.
+  if auth.uid() is null then
     return new;
   end if;
 
-  if new.id is distinct from old.id then
-    raise exception 'profiles.id cannot be changed';
-  end if;
-  if new.role is distinct from old.role then
-    raise exception 'Only admins can change roles';
-  end if;
-  if new.email is distinct from old.email then
-    raise exception 'profiles.email is set by your sign-in provider and cannot be changed';
-  end if;
-  if new.created_at is distinct from old.created_at then
-    raise exception 'profiles.created_at cannot be changed';
+  -- Identity columns: admins may change these — that is what the console is for.
+  if not public.is_admin() then
+    if new.id is distinct from old.id then
+      raise exception 'profiles.id cannot be changed';
+    end if;
+    if new.role is distinct from old.role then
+      raise exception 'Only admins can change roles';
+    end if;
+    if new.email is distinct from old.email then
+      raise exception 'profiles.email is set by your sign-in provider and cannot be changed';
+    end if;
+    if new.created_at is distinct from old.created_at then
+      raise exception 'profiles.created_at cannot be changed';
+    end if;
   end if;
 
-  -- Scores are DERIVED. Rather than reverting to the old value, recompute the
-  -- truth from the ledger and write that. Two reasons this is better than a
-  -- revert: a cheating client's number is replaced by the real one instead of
-  -- being frozen, and award_xp's own UPDATE still lands (it is SECURITY DEFINER,
-  -- but auth.uid() is still the end user inside it, so a plain revert would have
-  -- silently undone every award — XP would never have moved).
+  -- Scores are DERIVED — for EVERYONE, admins included. Two things this gets
+  -- right that earlier versions did not:
+  --   * Recomputing (rather than reverting to the old value) means a cheating
+  --     client's number is replaced by the real one, and award_xp's own UPDATE
+  --     still lands. auth.uid() is still the end user inside a SECURITY DEFINER
+  --     function, so a plain revert silently undid every award.
+  --   * Admins are NOT exempt. Exempting them meant an admin's profile never
+  --     recomputed at all, so their ledger could be full while the column stayed
+  --     at zero. An admin has no more business asserting their own XP than
+  --     anyone else.
   new.xp     := (select coalesce(sum(e.points), 0)::int
                    from public.xp_events e where e.user_id = new.id);
   new.level  := public.xp_level(new.xp);
