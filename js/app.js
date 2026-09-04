@@ -250,4 +250,11 @@ async function adoptCloudSession() {
     });
     rebuildLayout();
   }
+  // Scores live on the server now, so pull them once per sign-in. Without this
+  // the browser keeps showing its old local XP while the database (and the admin
+  // console) shows the real figure.
+  import('./leaderboard.js')
+    .then(({ reconcileScores }) => reconcileScores())
+    .then((s) => { if (s) rebuildLayout(); })
+    .catch(() => { /* local mode or not migrated — keep the local numbers */ });
 }

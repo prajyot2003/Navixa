@@ -218,8 +218,56 @@ for (const xp of [0, 1, 99, 100, 101, 299, 300, 301, 599, 600, 1000, 5000, 12345
 }
 t('xp_level() and levelFromXp() agree', bad === null, bad || '');
 
+/* ---------- backfill for pre-ledger accounts ---------- */
+console.log('\n[8] one-time XP backfill from pre-ledger activity');
 await asSystem();
-console.log('\n[8] the migration is safe to re-run');
+await exec(`
+  create table if not exists public.user_state (
+    user_id uuid primary key references auth.users(id) on delete cascade,
+    data jsonb not null default '{}'::jsonb,
+    updated_at timestamptz not null default now()
+  );
+  alter table public.user_state enable row level security;
+  create policy state_select_own on public.user_state for select using (auth.uid() = user_id);
+  grant select, insert, update on public.user_state to authenticated;
+`);
+// 'honest' has a week of real activity recorded before the ledger existed.
+await q(`insert into public.user_state (user_id, data) values ($1, $2)`, [honest, JSON.stringify({
+  gamify: { activity: { '2026-07-17': 1, '2026-07-18': 7, '2026-07-19': 9, '2026-07-26': 1, '2026-07-27': 1 } },
+})]);
+// A fabricated history, to prove the ceiling holds.
+const greedy = (await q(`insert into auth.users (email) values ('greedy@x.com') returning id`)).rows[0].id;
+await exec(`insert into public.profiles (id, email) values ('${greedy}', 'greedy@x.com')`);
+const fakeDays = {};
+for (let i = 0; i < 400; i++) fakeDays[`2025-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`] = 9999;
+await q(`insert into public.user_state (user_id, data) values ($1, $2)`, [greedy, JSON.stringify({ gamify: { activity: fakeDays } })]);
+await exec(read('supabase-xp-backfill.sql'));
+await exec(`grant execute on function public.backfill_xp() to authenticated`);
+
+await become(honest);
+const bf = (await q(`select * from public.backfill_xp()`)).rows[0];
+t('backfill runs for a pre-ledger account', bf.out_ran === true);
+t('restores XP proportionate to real activity', bf.out_xp === 95, `got ${bf.out_xp} (expect 1+7+9+1+1=19 actions × 5)`);
+t('restores the day history (streak can survive)', bf.out_days === 5, `got ${bf.out_days}`);
+const hs = (await q(`select xp, level, streak from public.profiles where id = $1`, [honest])).rows[0];
+t('profile reflects the backfill', hs.xp === 95 && hs.level > 0, JSON.stringify(hs));
+
+const again = (await q(`select * from public.backfill_xp()`)).rows[0];
+t('refuses to run twice (not farmable)', again.out_ran === false);
+const afterTwice = (await q(`select xp from public.profiles where id = $1`, [honest])).rows[0];
+t('a second call does not add XP', afterTwice.xp === 95, `got ${afterTwice.xp}`);
+
+await become(greedy);
+const g = (await q(`select * from public.backfill_xp()`)).rows[0];
+t('fabricated history is capped at the ceiling', g.out_xp <= 500, `got ${g.out_xp}`);
+t('per-day action count is clamped too', g.out_xp === 500, `got ${g.out_xp}`);
+
+await become(honest);
+const post = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
+t('normal earning continues on top of the backfill', post.xp === 115, `got ${post.xp}`);
+
+await asSystem();
+console.log('\n[9] the migration is safe to re-run');
 let rerun = null;
 try { await exec(read('supabase-leaderboard.sql')); } catch (e) { rerun = e.message; }
 t('running it a second time is idempotent', rerun === null, rerun || '');

@@ -30,6 +30,38 @@ export async function awardXp(action) {
   return Array.isArray(data) ? data[0] : data;
 }
 
+/**
+ * Make the browser agree with the server about XP.
+ *
+ * This is what was missing: logActivity only pulled server totals when an action
+ * happened, so a signed-in user kept showing a stale local figure while the
+ * database (and therefore the admin console) said something else. Runs once per
+ * sign-in: backfills the ledger for pre-ledger accounts, then copies the server's
+ * numbers into local state so every surface reads the same value.
+ */
+export async function reconcileScores() {
+  const c = client();
+  if (!c || !cloudSession()) return null;
+  try {
+    // No-op after the first time — the function refuses a non-empty ledger.
+    await c.rpc('backfill_xp');
+  } catch { /* not migrated yet; fall through to the read */ }
+
+  const { data, error } = await c.from('profiles')
+    .select('xp, level, streak').eq('id', cloudSession().user.id).maybeSingle();
+  if (error || !data) return null;
+
+  const { update, getState } = await import('./store.js');
+  const g = getState()?.gamify;
+  if (!g || (g.xp === data.xp && g.serverStreak === data.streak)) return data;
+  update((st) => {
+    st.gamify.xp = data.xp;
+    st.gamify.serverLevel = data.level;
+    st.gamify.serverStreak = data.streak;
+  }, { type: 'gamify', kind: 'reconcile' });
+  return data;
+}
+
 export async function fetchLeaderboard(limit = 25) {
   const c = client();
   if (!c) throw new Error(SETUP);

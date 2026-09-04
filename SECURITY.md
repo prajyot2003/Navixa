@@ -8,7 +8,7 @@ Run the security regression suite any time:
 node tests/security.mjs     # 62 checks
 node tests/ratelimit.mjs    # 19 checks (both backends + failure modes)
 node tests/leaderboard.mjs  # 47 checks (XP integrity + leaderboard privacy)
-node tests/sql.mjs          # 28 checks — runs the migrations against a real
+node tests/sql.mjs          # 37 checks — runs the migrations against a real
                             #   Postgres (PGlite). Needs: npm i @electric-sql/pglite
 node tests/run.mjs          # 33 functional tests
 ```
@@ -35,6 +35,10 @@ publicly it becomes a real integrity problem, so the model changed:
   cap earns nothing and is not an error, so honest heavy users see no failure.
 - **Migration reconciles history.** Pre-existing XP was client-asserted with no
   ledger behind it, so it is reset to the ledger's truth rather than grandfathered.
+  `supabase-xp-backfill.sql` then re-seeds the ledger from each user's recorded
+  day-by-day activity, so streaks survive the change. That trusts client data
+  exactly once, and is bounded three ways: actions-per-day clamp, a 500 XP
+  ceiling, and a hard refusal to run against a non-empty ledger.
 
 **Leaderboard privacy — opt-in, pseudonymous.**
 
