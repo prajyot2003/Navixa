@@ -244,18 +244,24 @@ await q(`insert into public.user_state (user_id, data) values ($1, $2)`, [greedy
 await exec(read('supabase-xp-backfill.sql'));
 await exec(`grant execute on function public.backfill_xp() to authenticated`);
 
+// Earn a point BEFORE backfilling. The first version guarded on "ledger is
+// empty", which meant one normal action made the pre-ledger history
+// permanently unrecoverable — exactly what happened in production.
 await become(honest);
+await q(`select * from public.award_xp('job_search')`);
 const bf = (await q(`select * from public.backfill_xp()`)).rows[0];
 t('backfill runs for a pre-ledger account', bf.out_ran === true);
-t('restores XP proportionate to real activity', bf.out_xp === 95, `got ${bf.out_xp} (expect 1+7+9+1+1=19 actions × 5)`);
+t('restores XP proportionate to real activity (on top of the 2 already earned)',
+  bf.out_xp === 97, `got ${bf.out_xp} (expect 2 earned + 19 actions × 5)`);
+t('backfill still works after the user has already earned some XP', bf.out_ran === true);
 t('restores the day history (streak can survive)', bf.out_days === 5, `got ${bf.out_days}`);
 const hs = (await q(`select xp, level, streak from public.profiles where id = $1`, [honest])).rows[0];
-t('profile reflects the backfill', hs.xp === 95 && hs.level > 0, JSON.stringify(hs));
+t('profile reflects the backfill', hs.xp === 97 && hs.level > 0, JSON.stringify(hs));
 
 const again = (await q(`select * from public.backfill_xp()`)).rows[0];
 t('refuses to run twice (not farmable)', again.out_ran === false);
 const afterTwice = (await q(`select xp from public.profiles where id = $1`, [honest])).rows[0];
-t('a second call does not add XP', afterTwice.xp === 95, `got ${afterTwice.xp}`);
+t('a second call does not add XP', afterTwice.xp === 97, `got ${afterTwice.xp}`);
 
 await become(greedy);
 const g = (await q(`select * from public.backfill_xp()`)).rows[0];
@@ -264,7 +270,7 @@ t('per-day action count is clamped too', g.out_xp === 500, `got ${g.out_xp}`);
 
 await become(honest);
 const post = (await q(`select * from public.award_xp('job_apply')`)).rows[0];
-t('normal earning continues on top of the backfill', post.xp === 115, `got ${post.xp}`);
+t('normal earning continues on top of the backfill', post.xp === 117, `got ${post.xp}`);
 
 await asSystem();
 console.log('\n[9] the migration is safe to re-run');

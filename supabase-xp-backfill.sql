@@ -34,8 +34,11 @@ begin
     raise exception 'Sign in required';
   end if;
 
-  -- Only ever runs against an empty ledger. This is what makes it unfarmable.
-  if exists (select 1 from public.xp_events where user_id = uid) then
+  -- Unfarmable because it can only ever be MIGRATED once — keyed on the
+  -- 'migrated' marker, not on the ledger being empty. (Guarding on "empty
+  -- ledger" was wrong: as soon as a user earned a single point through normal
+  -- use, their pre-ledger history became unrecoverable.)
+  if exists (select 1 from public.xp_events where user_id = uid and action = 'migrated') then
     return query select p.xp, 0, false from public.profiles p where p.id = uid;
     return;
   end if;
